@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<title>PageXML Viewer</title>
+{% endblock %}
+
+{% block body %}
+<header>
+    <h1>PAGE-XML Viewer</h1>
+    <button id="btnUpload" class="btn">Upload files</button>
+    <input id="fileInput" type="file" multiple hidden/>
+    <span id="status" class="meta"></span>
+</header>
+
+<main>
+    <aside id="sidebar">
+        <div class="panel">
+            <h2>Workspace</h2>
+            <div id="wsInfo" class="meta">No workspace yet.</div>
+        </div>
+
+        <div class="panel">
+            <h2>PAGE-XML files</h2>
+            <ul id="pageList" class="list"></ul>
+        </div>
+
+        <div class="panel" id="metsPanel" style="display:none">
+            <h2>METS</h2>
+            <button id="btnLoadMets" class="btn">Open METS</button>
+            <div id="metsInfo" class="meta"></div>
+        </div>
+    </aside>
+
+    <section id="content">
+        <div id="canvasWrap">
+            <img id="pageImg" alt="page"/>
+            <canvas id="overlay"></canvas>
+        </div>
+        <div id="geomInfo" class="meta"></div>
+    </section>
+</main>
+{% endblock %}

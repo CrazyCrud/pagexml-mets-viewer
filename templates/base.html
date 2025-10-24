@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="{{ url_for('static', filename= 'css/style.css') }}" />
+        <title>PageXML Viewer</title>
+        {% block head %}{% endblock %}
+    </head>
+    <body>
+        <div>
+            {% block body %}{% endblock %}
+        </div>
+        <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    </body>
+</html>
