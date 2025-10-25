@@ -15,51 +15,96 @@
 
 <section class="section pt-2">
     <div class="container">
-        <div class="columns is-variable is-5">
-            <div class="column is-4">
-                <div class="box">
-                    <div class="field is-grouped is-grouped-multiline">
-                        <div class="control">
-                            <button id="btnUpload" class="button is-link is-light">
-                                <span class="icon"><i class="fas fa-upload"></i></span>
-                                <span>Upload files</span>
-                            </button>
-                            <input id="fileInput" type="file" class="is-hidden" multiple/>
-                        </div>
+        <h1 class="title">PAGE-XML Viewer</h1>
+        <p class="subtitle">Upload PAGE-XML files, add missing images, then <strong>Commit & Normalize</strong>.</p>
 
-                        <div class="control">
-                            <button id="btnLoadMets" class="button is-info is-light">Load METS</button>
-                        </div>
-                    </div>
-
-                    <div class="content is-small">
-                        <p><strong>Workspace:</strong> <span id="wsInfo">—</span></p>
-                        <div id="metsPanel" class="notification is-info is-light" style="display:none;">
-                            <strong>METS:</strong> <span id="metsInfo"></span>
-                        </div>
-                    </div>
-
-                    <p class="menu-label">PAGE-XML files</p>
-                    <aside class="menu" style="max-height: 55vh; overflow:auto;">
-                        <ul id="pageList" class="menu-list">
-                        </ul>
-                    </aside>
-                </div>
+        <!-- Workspace status -->
+        <div id="wsBox" class="box" style="display:none;">
+            <p class="mb-2"><strong>Workspace:</strong> <span id="wsIdTag" class="tag is-info"></span></p>
+            <div class="buttons">
+                <button id="btnCommit" class="button is-success" disabled>Commit &amp; Normalize</button>
+                <button id="btnReset" class="button is-light">Start Over</button>
             </div>
+            <p id="commitNotice" class="help is-success" style="display:none;">Committed ✓</p>
+        </div>
 
-            <div class="column is-8">
-                <div class="box">
-                    <div class="content is-small mb-3">
-                        <span class="tag is-light">Regions/Lines: <span id="geomInfo">0 / 0</span></span>
-                    </div>
-
-                    <div class="viewer">
-                        <img id="pageImg" alt="page" class="viewer-img">
-                        <canvas id="overlay" class="viewer-overlay"></canvas>
-                    </div>
+        <!-- Upload PAGE-XMLs -->
+        <div class="box">
+            <h2 class="title is-5">1) Upload PAGE-XML files</h2>
+            <form id="formPages">
+                <div class="file has-name is-fullwidth">
+                    <label class="file-label">
+                        <input id="pagesInput" class="file-input" type="file" name="files[]" multiple accept=".xml">
+                        <span class="file-cta">
+              <span class="file-icon">📄</span>
+              <span class="file-label">Choose PAGE-XML files…</span>
+            </span>
+                        <span id="pagesInputName" class="file-name">No files selected</span>
+                    </label>
                 </div>
+                <div class="mt-3">
+                    <button class="button is-link" type="submit">Upload PAGE-XML</button>
+                </div>
+            </form>
+            <p id="pagesUploadMsg" class="help mt-2"></p>
+        </div>
+
+        <!-- Missing images & upload -->
+        <div class="box" id="imagesBox" style="display:none;">
+            <h2 class="title is-5">2) Upload missing images</h2>
+            <div id="missingWrap" class="content">
+                <p><strong>Missing images:</strong></p>
+                <ul id="missingList"></ul>
+            </div>
+            <form id="formImages" class="mt-3">
+                <div class="file has-name is-fullwidth">
+                    <label class="file-label">
+                        <input id="imagesInput" class="file-input" type="file" name="files[]" multiple
+                               accept=".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp,.gif">
+                        <span class="file-cta">
+              <span class="file-icon">🖼</span>
+              <span class="file-label">Choose images…</span>
+            </span>
+                        <span id="imagesInputName" class="file-name">No files selected</span>
+                    </label>
+                </div>
+                <div class="mt-3">
+                    <button class="button is-primary" type="submit">Upload images</button>
+                </div>
+            </form>
+            <p id="imagesUploadMsg" class="help mt-2"></p>
+        </div>
+
+        <!-- Page list -->
+        <div class="box" id="pagesBox" style="display:none;">
+            <h2 class="title is-5">3) Open a PAGE</h2>
+            <div class="table-container">
+                <table class="table is-fullwidth is-striped is-hoverable">
+                    <thead>
+                    <tr>
+                        <th>File</th>
+                    </tr>
+                    </thead>
+                    <tbody id="pagesTableBody"></tbody>
+                </table>
             </div>
         </div>
+
+        <!-- Viewer -->
+        <div class="box" id="viewerBox" style="display:none;">
+            <h2 class="title is-5">Viewer</h2>
+            <p class="mb-2"><strong>PAGE:</strong> <span id="curPage"></span></p>
+            <div class="content">
+                <canvas id="pageCanvas" style="max-width:100%; border:1px solid #ddd;"></canvas>
+            </div>
+            <div class="field is-grouped is-grouped-multiline">
+                <div class="control"><label class="checkbox"><input type="checkbox" id="cbRegions" checked> Show regions</label>
+                </div>
+                <div class="control"><label class="checkbox"><input type="checkbox" id="cbLines" checked> Show
+                    lines</label></div>
+            </div>
+        </div>
+
     </div>
 </section>
 

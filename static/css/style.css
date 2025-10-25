@@ -14,7 +14,7 @@
   position: absolute;
   left: 0;
   top: 0;
-  pointer-events: none; /* don’t eat clicks */
+  pointer-events: none;
 }
 
 #pageList li.active > a,
