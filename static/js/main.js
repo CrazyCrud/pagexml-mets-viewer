@@ -8,13 +8,35 @@ $(function () {
     $('#wsIdTag').text(id);
     $('#wsBox').show();
   }
+
+  function renderStats(stats) {
+      const panel = document.getElementById('stats-panel');
+      const content = document.getElementById('stats-content');
+      if (!stats) { panel.style.display = 'none'; return; }
+      const lines = [];
+      lines.push(`<div><strong>Total regions:</strong> ${stats.regions_total}</div>`);
+      lines.push(`<div><strong>Total text lines:</strong> ${stats.lines_total}</div>`);
+      if (stats.regions_by_type) {
+        lines.push('<div><strong>Regions by type:</strong></div>');
+        lines.push('<ul>' +
+          Object.entries(stats.regions_by_type)
+            .sort((a,b)=>a[0].localeCompare(b[0]))
+            .map(([k,v]) => `<li>${k}: ${v}</li>`).join('') +
+          '</ul>');
+      }
+      content.innerHTML = lines.join('');
+      panel.style.display = 'block';
+    }
+
   function canCommit() {
     return workspaceId && missingImages.length === 0 && pages.length > 0;
   }
+
   function updateCommitUI(committed=false) {
     $('#btnCommit').prop('disabled', !canCommit());
     $('#commitNotice').toggle(committed);
   }
+
   function renderMissing() {
     const ul = $('#missingList').empty();
     if (!missingImages.length) {
@@ -25,6 +47,7 @@ $(function () {
     $('#imagesBox').show();
     updateCommitUI(false);
   }
+
   function renderPages() {
     const tb = $('#pagesTableBody').empty();
     if (!pages.length) {
@@ -168,6 +191,7 @@ $(function () {
         $('#pageImage').attr('height', data.image.height);
         }
 
+        renderStats(data.stats);
         loadAndDraw(imgUrl, data);
       })
       .fail(function (xhr) {

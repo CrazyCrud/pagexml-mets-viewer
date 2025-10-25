@@ -1,11 +1,11 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
-
 from flask import Blueprint, request, jsonify, send_file, abort
-
+from collections import Counter
 from core.resolve import resolve_image_for_page
 from core.page import parse_pcgts, page_coords, collect_regions, collect_lines
+
 
 WORKSPACES_ROOT = Path("data/workspaces").resolve()
 
@@ -249,6 +249,13 @@ def get_page():
     if not page_id:
         page_id = page_xml.stem
 
+    region_types = Counter([r.get("type", "Unknown") for r in regions])
+    stats = {
+        "regions_total": len(regions),
+        "regions_by_type": dict(region_types),
+        "lines_total": len(lines),
+    }
+
     return jsonify({
         "image": {
             "path": str(Path(img_path).resolve()),
@@ -260,6 +267,7 @@ def get_page():
         "page": {"id": page_id},
         "regions": regions,
         "lines": lines,
+        "stats": stats
     })
 
 

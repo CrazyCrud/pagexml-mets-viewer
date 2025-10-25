@@ -11,7 +11,7 @@
         <h1 class="title">PAGE-XML Viewer</h1>
         <p class="subtitle">Upload PAGE-XML files, add images, then Commit.</p>
 
-        <!-- Workspace status -->
+        <!-- Workspace -->
         <div id="wsBox" class="box" style="display:none;">
             <p class="mb-2"><strong>Workspace-ID on server:</strong> <span id="wsIdTag" class="tag is-info"></span></p>
             <div class="buttons">
@@ -21,7 +21,7 @@
             <p id="commitNotice" class="help is-success" style="display:none;">Committed ✓</p>
         </div>
 
-        <!-- Upload PAGE-XMLs -->
+        <!-- Upload PageXML files -->
         <div class="box">
             <h2 class="title is-5">1. Upload PAGE-XML files</h2>
             <form id="formPages">
@@ -42,7 +42,7 @@
             <p id="pagesUploadMsg" class="help mt-2"></p>
         </div>
 
-        <!-- Missing images & upload -->
+        <!-- Add images and upload -->
         <div class="box" id="imagesBox" style="display:none;">
             <h2 class="title is-5">2. Upload images</h2>
             <div id="missingWrap" class="content">
@@ -87,6 +87,9 @@
         <div class="box" id="viewerBox" style="display:none;">
             <h2 class="title is-5">Viewer</h2>
             <p class="mb-2"><strong>PAGE:</strong> <span id="curPage"></span></p>
+            <div id="stats-panel" class="box" style="margin-top:.75rem; display:none;">
+                <div id="stats-content"></div>
+            </div>
             <div class="content">
                 <canvas id="pageCanvas" style="max-width:100%; border:1px solid #ddd;"></canvas>
             </div>
