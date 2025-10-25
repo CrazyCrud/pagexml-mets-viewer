@@ -5,6 +5,7 @@ There are  great PageXML viewers out there:
 
 I just wanted to add another, that can read in multiple PageXML files as well as a OCR-D workspace.
 
+
 # TODO
 - [ ] Get it working
-- [ ] Dockerdize
+- [ ] Dockerize

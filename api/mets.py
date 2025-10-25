@@ -4,7 +4,7 @@ from typing import Dict
 from flask import Blueprint, request, jsonify, abort
 from ocrd_models import OcrdMets
 
-bp_mets = Blueprint("api_mets", __name__, url_prefix="/api")
+bp_mets = Blueprint("api_mets", __name__)
 
 WORKSPACES = Path("data/workspaces").resolve()
 

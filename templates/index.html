@@ -5,38 +5,62 @@
 {% endblock %}
 
 {% block body %}
-<header>
-    <h1>PAGE-XML Viewer</h1>
-    <button id="btnUpload" class="btn">Upload files</button>
-    <input id="fileInput" type="file" multiple hidden/>
-    <span id="status" class="meta"></span>
-</header>
 
-<main>
-    <aside id="sidebar">
-        <div class="panel">
-            <h2>Workspace</h2>
-            <div id="wsInfo" class="meta">No workspace yet.</div>
-        </div>
+<section class="section pt-4 pb-2">
+    <div class="container">
+        <h1 class="title is-4">PAGE-XML Viewer</h1>
+        <p class="subtitle is-6" id="status">Ready.</p>
+    </div>
+</section>
 
-        <div class="panel">
-            <h2>PAGE-XML files</h2>
-            <ul id="pageList" class="list"></ul>
-        </div>
+<section class="section pt-2">
+    <div class="container">
+        <div class="columns is-variable is-5">
+            <div class="column is-4">
+                <div class="box">
+                    <div class="field is-grouped is-grouped-multiline">
+                        <div class="control">
+                            <button id="btnUpload" class="button is-link is-light">
+                                <span class="icon"><i class="fas fa-upload"></i></span>
+                                <span>Upload files</span>
+                            </button>
+                            <input id="fileInput" type="file" class="is-hidden" multiple/>
+                        </div>
 
-        <div class="panel" id="metsPanel" style="display:none">
-            <h2>METS</h2>
-            <button id="btnLoadMets" class="btn">Open METS</button>
-            <div id="metsInfo" class="meta"></div>
-        </div>
-    </aside>
+                        <div class="control">
+                            <button id="btnLoadMets" class="button is-info is-light">Load METS</button>
+                        </div>
+                    </div>
 
-    <section id="content">
-        <div id="canvasWrap">
-            <img id="pageImg" alt="page"/>
-            <canvas id="overlay"></canvas>
+                    <div class="content is-small">
+                        <p><strong>Workspace:</strong> <span id="wsInfo">—</span></p>
+                        <div id="metsPanel" class="notification is-info is-light" style="display:none;">
+                            <strong>METS:</strong> <span id="metsInfo"></span>
+                        </div>
+                    </div>
+
+                    <p class="menu-label">PAGE-XML files</p>
+                    <aside class="menu" style="max-height: 55vh; overflow:auto;">
+                        <ul id="pageList" class="menu-list">
+                        </ul>
+                    </aside>
+                </div>
+            </div>
+
+            <div class="column is-8">
+                <div class="box">
+                    <div class="content is-small mb-3">
+                        <span class="tag is-light">Regions/Lines: <span id="geomInfo">0 / 0</span></span>
+                    </div>
+
+                    <div class="viewer">
+                        <img id="pageImg" alt="page" class="viewer-img">
+                        <canvas id="overlay" class="viewer-overlay"></canvas>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div id="geomInfo" class="meta"></div>
-    </section>
-</main>
+    </div>
+</section>
+
 {% endblock %}

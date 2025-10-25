@@ -4,13 +4,11 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import uuid
 import json
-
-# OCR-D models to parse PAGE-XML and optionally METS
 from ocrd_models.ocrd_page_generateds import parse as parse_pagexml
 from ocrd_models.ocrd_page import PcGtsType
 
 try:
-    from ocrd_models import OcrdMets  # optional only needed for METS upload
+    from ocrd_models import OcrdMets
 
     HAVE_METS = True
 except Exception:
@@ -18,7 +16,7 @@ except Exception:
 
 bp_import = Blueprint("import", __name__)
 
-# Root where ephemeral workspaces live
+# Root where workspaces live
 ROOT = Path("data/workspaces").resolve()
 ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -126,7 +124,7 @@ def _extract_from_mets(mets_path: Path) -> Tuple[List[str], List[str]]:
     return page_hrefs, image_hrefs
 
 
-@bp_import.post("/api/upload-pages")
+@bp_import.post("/upload-pages")
 def upload_pages():
     """
     Upload multiple PAGE-XML files into a new or existing workspace.
@@ -170,7 +168,7 @@ def upload_pages():
     return jsonify(workspace_id=p["id"], pages=state["pages"], missing_images=missing)
 
 
-@bp_import.post("/api/upload-mets")
+@bp_import.post("/upload-mets")
 def upload_mets():
     """
     Upload a single METS file. We store it under original/mets.xml
@@ -202,7 +200,7 @@ def upload_mets():
     return jsonify(workspace_id=p["id"], pages=page_basenames, missing_images=missing)
 
 
-@bp_import.post("/api/upload-images")
+@bp_import.post("/upload-images")
 def upload_images():
     """
     Upload multiple images for an existing workspace.
@@ -237,7 +235,7 @@ def upload_images():
     return jsonify(added=added, still_missing=still_missing)
 
 
-@bp_import.post("/api/commit-import")
+@bp_import.post("/commit-import")
 def commit_import():
     """
     Normalize references and write final PAGE-XML into normalized/.

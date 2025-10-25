@@ -1,149 +1,150 @@
+/* global $, window, document */
+
 let WS_ID = null;
 let CURRENT_XML = null;
 let PAGE_JSON = null;
 
-const el = (id) => document.getElementById(id);
+const $id = (sel) => $(sel);
 
-window.addEventListener('DOMContentLoaded', () => {
-  el('btnUpload').addEventListener('click', () => el('fileInput').click());
-  el('fileInput').addEventListener('change', onPickFiles);
-  el('btnLoadMets').addEventListener('click', onLoadMets);
+$(function () {
+  $('#btnUpload').on('click', () => $('#fileInput').trigger('click'));
+  $('#fileInput').on('change', onPickFiles);
+  $('#btnLoadMets').on('click', onLoadMets);
+  $(window).on('resize', onResize);
 });
 
-// Upload many files (flat or nested if you build your own paths[])
+function setStatus(msg) {
+  $('#status').text(msg);
+}
+
 async function onPickFiles(ev) {
   const files = Array.from(ev.target.files || []);
   if (!files.length) return;
 
   setStatus('Uploading…');
-  el('btnUpload').disabled = true;
+  $('#btnUpload').prop('disabled', true);
 
-  try {
-    const form = new FormData();
-    for (const f of files) {
-      form.append('files[]', f, f.name);
-      // No directory structure here: we just repeat the filename
-      form.append('paths[]', f.name);
-    }
-    const res = await fetch('/api/upload-many', { method: 'POST', body: form });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${res.status}`);
-    }
-    const data = await res.json();
+  const form = new FormData();
+  for (const f of files) {
+    form.append('files[]', f, f.name);
+    form.append('paths[]', f.name); // flat structure; adjust if you add subfolders
+  }
+
+  $.ajax({
+    url: '/api/upload-pages',
+    method: 'POST',
+    data: form,
+    processData: false,
+    contentType: false,
+  })
+  .done((data) => {
     WS_ID = data.workspace_id;
     renderWorkspace(data);
     setStatus('Uploaded.');
-  } catch (e) {
-    console.error(e);
-    alert('Upload failed: ' + e.message);
+  })
+  .fail((xhr) => {
+    let msg = `HTTP ${xhr.status}`;
+    try { msg = (xhr.responseJSON && xhr.responseJSON.error) || msg; } catch(e) {}
+    alert('Upload failed: ' + msg);
     setStatus('Upload failed.');
-  } finally {
-    el('btnUpload').disabled = false;
-    el('fileInput').value = '';
-  }
-}
-
-function renderWorkspace(data) {
-  // Sidebar
-  el('wsInfo').textContent = `Workspace: ${data.workspace_id}`;
-  // METS section
-  if (data.mets) {
-    el('metsPanel').style.display = '';
-    el('metsInfo').textContent = data.mets;
-  } else {
-    el('metsPanel').style.display = 'none';
-    el('metsInfo').textContent = '';
-  }
-  // PAGE list
-  const ul = el('pageList');
-  ul.innerHTML = '';
-  (data.pages || []).forEach((rel) => {
-    const li = document.createElement('li');
-    li.textContent = rel;
-    li.addEventListener('click', () => openPageXml(rel, li));
-    ul.appendChild(li);
+  })
+  .always(() => {
+    $('#btnUpload').prop('disabled', false);
+    $('#fileInput').val('');
   });
 }
 
-async function openPageXml(relPath, liEl) {
-  CURRENT_XML = relPath;
+function renderWorkspace(data) {
+  $('#wsInfo').text(`Workspace: ${data.workspace_id}`);
 
-  for (const li of el('pageList').querySelectorAll('li')) li.classList.remove('active');
-  if (liEl) liEl.classList.add('active');
-
-  try {
-    setStatus('Loading page…');
-    const url = new URL('/api/page', window.location.origin);
-    url.searchParams.set('workspace_id', WS_ID);
-    url.searchParams.set('path', relPath);
-
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    PAGE_JSON = await res.json();
-
-    // Load image
-    const imgRel = PAGE_JSON.image?.path;
-    if (!imgRel) {
-      throw new Error('No image path returned from /api/page');
-    }
-    const imgUrl = new URL('/api/file', window.location.origin);
-    imgUrl.searchParams.set('workspace_id', WS_ID);
-    imgUrl.searchParams.set('path', imgRel);
-
-    await loadImageInto(el('pageImg'), imgUrl.toString());
-    fitOverlayToImage();
-    drawGeometry();
-    setStatus('Done.');
-  } catch (e) {
-    console.error(e);
-    alert('Failed to load page: ' + e.message);
-    setStatus('Error.');
+  if (data.mets) {
+    $('#metsPanel').show();
+    $('#metsInfo').text(data.mets);
+  } else {
+    $('#metsPanel').hide();
+    $('#metsInfo').text('');
   }
+
+  const $ul = $('#pageList').empty();
+  (data.pages || []).forEach((rel) => {
+    const $li = $('<li/>').text(rel);
+    $li.on('click', () => openPageXml(rel, $li));
+    $ul.append($li);
+  });
 }
 
-function setStatus(msg) {
-  el('status').textContent = msg;
+function openPageXml(relPath, $liEl) {
+  CURRENT_XML = relPath;
+  $('#pageList li').removeClass('active');
+  if ($liEl) $liEl.addClass('active');
+
+  setStatus('Loading page…');
+
+  $.get('/api/page', { workspace_id: WS_ID, path: relPath })
+    .done(async (data) => {
+      PAGE_JSON = data;
+
+      const imgRel = (PAGE_JSON.image && PAGE_JSON.image.path) || null;
+      if (!imgRel) throw new Error('No image path returned from /api/page');
+
+      const imgUrl = '/api/file?' + $.param({ workspace_id: WS_ID, path: imgRel }) + '&_t=' + Date.now();
+
+      await loadImageInto($('#pageImg')[0], imgUrl);
+      fitOverlayToImage();
+      drawGeometry();
+      setStatus('Done.');
+    })
+    .fail((xhr) => {
+      const msg = (xhr.responseJSON && xhr.responseJSON.error) || `HTTP ${xhr.status}`;
+      alert('Failed to load page: ' + msg);
+      setStatus('Error.');
+    });
 }
 
 function loadImageInto(imgEl, src) {
   return new Promise((resolve, reject) => {
-    imgEl.onload = () => resolve();
-    imgEl.onerror = () => reject(new Error('Image failed to load'));
-    imgEl.src = src + '&_t=' + Date.now(); // cache-bust
+    $(imgEl)
+      .off('load error')
+      .on('load', () => resolve())
+      .on('error', () => reject(new Error('Image failed to load')))
+      .attr('src', src);
   });
 }
 
 function fitOverlayToImage() {
-  const img = el('pageImg');
-  const canvas = el('overlay');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
+  const img = $('#pageImg')[0];
+  const $canvas = $('#overlay');
 
-  canvas.style.width = img.clientWidth + 'px';
-  canvas.style.height = img.clientHeight + 'px';
+  $canvas.attr('width', img.naturalWidth);
+  $canvas.attr('height', img.naturalHeight);
+
+  // CSS scale to match rendered image size
+  $canvas.css({
+    width: img.clientWidth + 'px',
+    height: img.clientHeight + 'px',
+  });
 }
 
 function drawGeometry() {
-  const canvas = el('overlay');
+  const canvas = $('#overlay')[0];
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const regions = PAGE_JSON?.regions || [];
-  const lines = PAGE_JSON?.lines || [];
+  const regions = (PAGE_JSON && PAGE_JSON.regions) || [];
+  const lines = (PAGE_JSON && PAGE_JSON.lines) || [];
 
   // Regions
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(0, 128, 255, 0.9)';
-  regions.forEach(r => drawPolygon(ctx, r.points));
+  regions.forEach((r) => drawPolygon(ctx, r.points));
 
-  // Lines
+  // Lines (polygon + baseline)
   ctx.strokeStyle = 'rgba(0, 200, 100, 0.9)';
-  lines.forEach(l => drawPolygon(ctx, l.points));
+  lines.forEach((l) => drawPolygon(ctx, l.points));
   ctx.strokeStyle = 'rgba(220, 50, 50, 0.9)';
-  lines.forEach(l => drawPolyline(ctx, l.baseline));
+  lines.forEach((l) => drawPolyline(ctx, l.baseline));
 
-  el('geomInfo').textContent = `${regions.length} regions, ${lines.length} lines`;
+  $('#geomInfo').text(`${regions.length} regions, ${lines.length} lines`);
 }
 
 function drawPolygon(ctx, pts) {
@@ -163,35 +164,33 @@ function drawPolyline(ctx, pts) {
   ctx.stroke();
 }
 
-// METS viewer
-async function onLoadMets() {
-  if (!WS_ID) return;
-  const metsRel = el('metsInfo').textContent.trim();
-  if (!metsRel) return;
-  setStatus('Loading METS…');
-  try {
-    const url = new URL('/api/mets', window.location.origin);
-    url.searchParams.set('workspace_id', WS_ID);
-    url.searchParams.set('path', metsRel);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    // Replace PAGE list with METS-defined PAGE-XMLs if present
-    const byXml = (data.pages || []).map(p => p.pagexml?.href).filter(Boolean);
-    if (byXml.length) {
-      renderWorkspace({ workspace_id: WS_ID, pages: byXml, mets: metsRel });
-    }
-    setStatus('METS loaded.');
-  } catch (e) {
-    console.error(e);
-    alert('Failed to load METS: ' + e.message);
-    setStatus('Error.');
-  }
-}
-
-window.addEventListener('resize', () => {
-  const img = el('pageImg');
-  if (!img.src) return;
+function onResize() {
+  const img = $('#pageImg')[0];
+  if (!img || !img.src) return;
   fitOverlayToImage();
   drawGeometry();
-});
+}
+
+function onLoadMets() {
+  if (!WS_ID) return;
+  const metsRel = $('#metsInfo').text().trim();
+  if (!metsRel) return;
+
+  setStatus('Loading METS…');
+
+  $.get('/api/mets', { workspace_id: WS_ID, path: metsRel })
+    .done((data) => {
+      const byXml = (data.pages || [])
+        .map((p) => p.pagexml && p.pagexml.href)
+        .filter(Boolean);
+      if (byXml.length) {
+        renderWorkspace({ workspace_id: WS_ID, pages: byXml, mets: metsRel });
+      }
+      setStatus('METS loaded.');
+    })
+    .fail((xhr) => {
+      const msg = (xhr.responseJSON && xhr.responseJSON.error) || `HTTP ${xhr.status}`;
+      alert('Failed to load METS: ' + msg);
+      setStatus('Error.');
+    });
+}

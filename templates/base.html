@@ -2,6 +2,8 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css">
         <link rel="stylesheet" href="{{ url_for('static', filename= 'css/style.css') }}" />
         <title>PageXML Viewer</title>
         {% block head %}{% endblock %}
@@ -10,6 +12,7 @@
         <div>
             {% block body %}{% endblock %}
         </div>
+        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
         <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     </body>
 </html>
