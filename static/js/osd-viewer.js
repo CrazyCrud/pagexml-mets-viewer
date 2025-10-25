@@ -1,4 +1,3 @@
-// static/js/osd-viewer.js
 class OSDViewer {
   constructor() {
     this.viewer = null;
@@ -21,7 +20,7 @@ class OSDViewer {
       maxZoomLevel: 40
     });
 
-    // re-add overlay after new image opens
+    // Re-add overlay after new image opens
     this.viewer.addHandler('open', () => {
       this.item = this.viewer.world.getItemAt(0);
       this._ensureSvg();
@@ -33,7 +32,7 @@ class OSDViewer {
   setToggles({regions, lines}) {
     if (typeof regions === 'boolean') this.showRegions = regions;
     if (typeof lines   === 'boolean') this.showLines   = lines;
-    // re-apply visibility without redrawing geometry
+    // Re-apply visibility without redrawing geometry
     if (this.svg) {
       this.svg.querySelectorAll('.region').forEach(n => n.style.display = this.showRegions ? '' : 'none');
       this.svg.querySelectorAll('.line').forEach(n => n.style.display = this.showLines ? '' : 'none');
@@ -42,7 +41,7 @@ class OSDViewer {
   }
 
   setImage(url, w, h) {
-    // Single-image mode, no pyramid; OSD still handles smooth pan/zoom.
+    // Single-image mode, no pyramid; OSD still handles smooth pan and zoom.
     this.viewer.open({ type: 'image', url, buildPyramid: false });
     // Prepare SVG viewBox to PAGE pixels so overlays use native coords
     this._ensureSvg();
@@ -67,7 +66,7 @@ class OSDViewer {
       }
     }
 
-    // Lines + baselines
+    // Lines and baselines
     if (this.showLines) {
       for (const l of lines) {
         if (l.points && l.points.length) {
@@ -119,5 +118,4 @@ class OSDViewer {
   }
 }
 
-// expose globally for main.js
 window.OSDViewer = OSDViewer;

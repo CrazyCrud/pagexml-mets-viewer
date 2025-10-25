@@ -3,7 +3,6 @@ $(function () {
   let pages = [];
   let missingImages = [];
 
-  // --- OSD changes: create and mount viewer once ---
   const viewer = new OSDViewer();
   viewer.mount(document.getElementById('osd'));
 
@@ -165,7 +164,6 @@ $(function () {
         const w = data?.image?.width || 0;
         const h = data?.image?.height || 0;
 
-        // --- OSD changes: set image + overlays in viewer ---
         viewer.setImage(imgUrl, w, h);
         viewer.setToggles({
           regions: $('#cbRegions').is(':checked'),
