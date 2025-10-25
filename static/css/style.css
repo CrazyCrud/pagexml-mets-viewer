@@ -17,6 +17,10 @@
   pointer-events: none;
 }
 
+#osd .region { fill: none; stroke: rgba(0,128,255,.9); stroke-width: 1px; }
+#osd .line   { fill: none; stroke: rgba(0,200,0,.9);  stroke-width: 1px; }
+#osd .base   { fill: none; stroke: rgba(255,80,80,.9); stroke-width: 1.5px; }
+
 #pageList li.active > a,
 #pageList li.active {
   background: #eef6ff;

@@ -1,7 +1,11 @@
 $(function () {
   let workspaceId = null;
-  let pages = [];           // uploaded PAGE xml filenames (like OCR-D-SEG_0001.xml)
-  let missingImages = [];   // basenames still needed
+  let pages = [];
+  let missingImages = [];
+
+  // --- OSD changes: create and mount viewer once ---
+  const viewer = new OSDViewer();
+  viewer.mount(document.getElementById('osd'));
 
   function setWs(id) {
     workspaceId = id;
@@ -10,28 +14,27 @@ $(function () {
   }
 
   function renderStats(stats) {
-      const panel = document.getElementById('stats-panel');
-      const content = document.getElementById('stats-content');
-      if (!stats) { panel.style.display = 'none'; return; }
-      const lines = [];
-      lines.push(`<div><strong>Total regions:</strong> ${stats.regions_total}</div>`);
-      lines.push(`<div><strong>Total text lines:</strong> ${stats.lines_total}</div>`);
-      if (stats.regions_by_type) {
-        lines.push('<div><strong>Regions by type:</strong></div>');
-        lines.push('<ul>' +
-          Object.entries(stats.regions_by_type)
-            .sort((a,b)=>a[0].localeCompare(b[0]))
-            .map(([k,v]) => `<li>${k}: ${v}</li>`).join('') +
-          '</ul>');
-      }
-      content.innerHTML = lines.join('');
-      panel.style.display = 'block';
+    const panel = document.getElementById('stats-panel');
+    const content = document.getElementById('stats-content');
+    if (!stats) { panel.style.display = 'none'; return; }
+    const lines = [];
+    lines.push(`<div><strong>Total regions:</strong> ${stats.regions_total}</div>`);
+    lines.push(`<div><strong>Total text lines:</strong> ${stats.lines_total}</div>`);
+    if (stats.regions_by_type) {
+      lines.push('<div><strong>Regions by type:</strong></div>');
+      lines.push('<ul>' +
+        Object.entries(stats.regions_by_type)
+          .sort((a,b)=>a[0].localeCompare(b[0]))
+          .map(([k,v]) => `<li>${k}: ${v}</li>`).join('') +
+        '</ul>');
     }
+    content.innerHTML = lines.join('');
+    panel.style.display = 'block';
+  }
 
   function canCommit() {
     return workspaceId && missingImages.length === 0 && pages.length > 0;
   }
-
   function updateCommitUI(committed=false) {
     $('#btnCommit').prop('disabled', !canCommit());
     $('#commitNotice').toggle(committed);
@@ -92,7 +95,6 @@ $(function () {
       processData: false,
       contentType: false
     }).done(function (resp) {
-      // resp: {workspace_id, pages, missing_images}
       setWs(resp.workspace_id);
       pages = resp.pages || [];
       missingImages = resp.missing_images || [];
@@ -120,7 +122,6 @@ $(function () {
       processData: false,
       contentType: false
     }).done(function (resp) {
-      // resp: {added, still_missing}
       missingImages = resp.still_missing || [];
       $('#imagesUploadMsg').text(`Added ${resp.added.length} image(s). Still missing: ${missingImages.length}.`).removeClass('is-danger').addClass('is-success');
       renderMissing();
@@ -132,28 +133,18 @@ $(function () {
   $('#btnCommit').on('click', function () {
     if (!canCommit()) return;
     $.post(`/api/commit-import?workspace_id=${encodeURIComponent(workspaceId)}`)
-      .done(function (resp) {
-        updateCommitUI(true);
-      })
-      .fail(function (xhr) {
-        alert(`Commit failed: ${xhr.responseText || xhr.status}`);
-      });
+      .done(function () { updateCommitUI(true); })
+      .fail(function (xhr) { alert(`Commit failed: ${xhr.responseText || xhr.status}`); });
   });
 
   $('#btnReset').on('click', function () {
     workspaceId = null;
     pages = [];
     missingImages = [];
-    $('#wsBox').hide();
-    $('#imagesBox').hide();
-    $('#pagesBox').hide();
-    $('#viewerBox').hide();
-    $('#pagesInput').val('');
-    $('#imagesInput').val('');
-    $('#pagesInputName').text('No files selected');
-    $('#imagesInputName').text('No files selected');
-    $('#pagesUploadMsg').text('');
-    $('#imagesUploadMsg').text('');
+    $('#wsBox, #imagesBox, #pagesBox, #viewerBox').hide();
+    $('#pagesInput, #imagesInput').val('');
+    $('#pagesInputName, #imagesInputName').text('No files selected');
+    $('#pagesUploadMsg, #imagesUploadMsg').text('');
     updateCommitUI(false);
   });
 
@@ -164,116 +155,37 @@ $(function () {
     openPage(workspaceId, name);
   });
 
-  const $canvas = $('#pageCanvas');
-  const ctx = $canvas[0].getContext('2d');
-
   function openPage(wsId, pageName) {
     $('#curPage').text(pageName);
     $('#viewerBox').show();
 
     $.getJSON('/api/page', { workspace_id: wsId, path: pageName })
       .done(function (data) {
-        // data.image.path is an absolute server path. Convert to /api/file route.
-        // e.g. /abs/.../data/workspaces/<wsId>/images/foo.tif  →  path=images/foo.tif
-        const abs = data.image && data.image.path ? data.image.path : '';
-        const relMatch = abs.match(new RegExp(`/data/workspaces/${escapeRegExp(wsId)}/(.*)$`));
-        let relPath = relMatch ? relMatch[1] : null;
-        if (!relPath) {
-          // fallback: if the PAGE was not committed yet, try to guess
-          relPath = `pages/${pageName}`;
-        }
         const imgUrl = data?.image?.url || '';
-        $('#pageImage').attr('src', imgUrl);
+        const w = data?.image?.width || 0;
+        const h = data?.image?.height || 0;
 
-        // Optionally: set width/height if you use them
-        if (data?.image?.width && data?.image?.height) {
-        $('#pageImage').attr('width', data.image.width);
-        $('#pageImage').attr('height', data.image.height);
-        }
+        // --- OSD changes: set image + overlays in viewer ---
+        viewer.setImage(imgUrl, w, h);
+        viewer.setToggles({
+          regions: $('#cbRegions').is(':checked'),
+          lines:   $('#cbLines').is(':checked')
+        });
+        viewer.setOverlays(data.regions || [], data.lines || []);
+        viewer.fit();
 
         renderStats(data.stats);
-        loadAndDraw(imgUrl, data);
       })
       .fail(function (xhr) {
         alert(`Failed to load PAGE: ${xhr.responseText || xhr.status}`);
       });
   }
 
-  function escapeRegExp(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  function loadAndDraw(url, meta) {
-    const img = new Image();
-    img.onload = function () {
-      // Fit canvas to image width (up to container width)
-      $canvas.attr('width', img.width);
-      $canvas.attr('height', img.height);
-      ctx.clearRect(0, 0, img.width, img.height);
-      ctx.drawImage(img, 0, 0);
-
-      drawOverlays(meta);
-    };
-    img.onerror = function () {
-      alert('Could not load image for this PAGE.');
-    };
-    img.src = url;
-  }
-
-  function drawOverlays(meta) {
-    const showRegions = $('#cbRegions').is(':checked');
-    const showLines = $('#cbLines').is(':checked');
-
-    // Regions
-    if (showRegions && meta.regions && meta.regions.length) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0, 128, 255, 0.9)';
-      meta.regions.forEach(r => drawPoly(r.points));
-      ctx.restore();
-    }
-
-    // Lines (polygon + baseline)
-    if (showLines && meta.lines && meta.lines.length) {
-      ctx.save();
-      // line polygon
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(0, 200, 0, 0.9)';
-      meta.lines.forEach(l => drawPoly(l.points));
-      // baseline
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(255, 80, 80, 0.9)';
-      meta.lines.forEach(l => drawPolyline(l.baseline));
-      ctx.restore();
-    }
-  }
-
-  function drawPoly(points) {
-    if (!points || !points.length) return;
-    ctx.beginPath();
-    for (let i = 0; i < points.length; i++) {
-      const [x, y] = points[i];
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.stroke();
-  }
-  function drawPolyline(points) {
-    if (!points || !points.length) return;
-    ctx.beginPath();
-    for (let i = 0; i < points.length; i++) {
-      const [x, y] = points[i];
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-
-  // Toggle redraw on checkbox change
+  // Toggle redraw on checkbox change (no refetch needed)
   $('#cbRegions, #cbLines').on('change', function () {
-    // naive redraw: trigger click on current page row if visible
-    const cur = $('#curPage').text();
-    if (workspaceId && cur) openPage(workspaceId, cur);
+    viewer.setToggles({
+      regions: $('#cbRegions').is(':checked'),
+      lines:   $('#cbLines').is(':checked')
+    });
   });
 });
