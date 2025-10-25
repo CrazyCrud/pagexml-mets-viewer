@@ -1,0 +1,23 @@
+services:
+  viewer:
+    build:
+      context: .
+      # network: host
+    image: ocrd-page-mets-viewer:latest
+    ports:
+      - "8000:8000"
+    environment:
+      GUNICORN_APP: "app:create_app()"
+      GUNICORN_WORKERS: "1"
+      GUNICORN_THREADS: "8"
+      GUNICORN_TIMEOUT: "120"
+      FLASK_ENV: "production"
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

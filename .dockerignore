@@ -1,0 +1,10 @@
+.git
+**/__pycache__/
+**/*.pyc
+.env
+.venv
+.envrc
+dist
+build
+node_modules
+data/workspaces/*
