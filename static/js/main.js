@@ -18,7 +18,7 @@ $(function () {
   function renderMissing() {
     const ul = $('#missingList').empty();
     if (!missingImages.length) {
-      ul.append('<li><em>None ✔</em></li>');
+      ul.append('<li><em>None</em></li>');
     } else {
       missingImages.forEach(n => ul.append(`<li>${n}</li>`));
     }
