@@ -17,9 +17,25 @@
   pointer-events: none;
 }
 
-#osd .region { fill: none; stroke: rgba(0,128,255,.9); stroke-width: 1px; }
-#osd .line   { fill: none; stroke: rgba(0,200,0,.9);  stroke-width: 1px; }
-#osd .base   { fill: none; stroke: rgba(255,80,80,.9); stroke-width: 1.5px; }
+#osd svg g[data-layer="regions"] .region {
+  stroke: rgba(0,128,255,0.9);
+  stroke-width: 1px;
+  fill: #0080ff;            /* solid color */
+  fill-opacity: 0.2;        /* 80% transparent */
+}
+
+#osd svg g[data-layer="lines"] .line {
+  stroke: rgba(0,200,0,0.9);
+  stroke-width: 1px;
+  fill: #00c800;
+  fill-opacity: 0.15;       /* subtle fill */
+}
+
+#osd svg .base {
+  stroke: rgba(255,80,80,0.9);
+  stroke-width: 1.5px;
+  fill: none;
+}
 
 #pageList li.active > a,
 #pageList li.active {

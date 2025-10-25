@@ -165,10 +165,12 @@ $(function () {
         const h = data?.image?.height || 0;
 
         viewer.setImage(imgUrl, w, h);
+        /*
         viewer.setToggles({
           regions: $('#cbRegions').is(':checked'),
           lines:   $('#cbLines').is(':checked')
         });
+        */
         viewer.setOverlays(data.regions || [], data.lines || []);
         viewer.fit();
 
