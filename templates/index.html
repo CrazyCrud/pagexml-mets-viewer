@@ -1,108 +1,157 @@
 {% extends 'base.html' %}
 
 {% block head %}
-<title>PageXML Viewer</title>
+<title>PAGE-XML / METS Viewer</title>
 {% endblock %}
 
 {% block body %}
 
 <section class="section pt-2">
-    <div class="container">
-        <h1 class="title">PAGE-XML Viewer</h1>
-        <p class="subtitle">Upload PAGE-XML files, add images, then Commit.</p>
+  <div class="container">
+    <h1 class="title">PAGE-XML & METS Viewer</h1>
+    <p class="subtitle">
+      Either upload PAGE-XML files and images directly, or upload a METS and check what's needed.
+    </p>
 
-        <!-- Workspace -->
-        <div id="wsBox" class="box" style="display:none;">
-            <p class="mb-2"><strong>Workspace-ID on server:</strong> <span id="wsIdTag" class="tag is-info"></span></p>
-            <div class="buttons">
-                <button id="btnCommit" class="button is-success" disabled>Commit</button>
-                <button id="btnReset" class="button is-light">Start Over</button>
-            </div>
-            <p id="commitNotice" class="help is-success" style="display:none;">Committed ✓</p>
-        </div>
-
-        <!-- Upload PageXML files -->
-        <div class="box">
-            <h2 class="title is-5">1. Upload PAGE-XML files</h2>
-            <form id="formPages">
-                <div class="file has-name is-fullwidth">
-                    <label class="file-label">
-                        <input id="pagesInput" class="file-input" type="file" name="files[]" multiple accept=".xml">
-                        <span class="file-cta">
-              <span class="file-icon">📄</span>
-              <span class="file-label">Choose PAGE-XML files…</span>
-            </span>
-                        <span id="pagesInputName" class="file-name">No files selected</span>
-                    </label>
-                </div>
-                <div class="mt-3">
-                    <button class="button is-link" type="submit">Upload PAGE-XML</button>
-                </div>
-            </form>
-            <p id="pagesUploadMsg" class="help mt-2"></p>
-        </div>
-
-        <!-- Add images and upload -->
-        <div class="box" id="imagesBox" style="display:none;">
-            <h2 class="title is-5">2. Upload images</h2>
-            <div id="missingWrap" class="content">
-                <p><strong>Missing images:</strong></p>
-                <ul id="missingList"></ul>
-            </div>
-            <form id="formImages" class="mt-3">
-                <div class="file has-name is-fullwidth">
-                    <label class="file-label">
-                        <input id="imagesInput" class="file-input" type="file" name="files[]" multiple
-                               accept=".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp,.gif">
-                        <span class="file-cta">
-              <span class="file-icon">🖼</span>
-              <span class="file-label">Choose images…</span>
-            </span>
-                        <span id="imagesInputName" class="file-name">No files selected</span>
-                    </label>
-                </div>
-                <div class="mt-3">
-                    <button class="button is-primary" type="submit">Upload images</button>
-                </div>
-            </form>
-            <p id="imagesUploadMsg" class="help mt-2"></p>
-        </div>
-
-        <!-- Page list -->
-        <div class="box" id="pagesBox" style="display:none;">
-            <h2 class="title is-5">3. Open a PAGE</h2>
-            <div class="table-container">
-                <table class="table is-fullwidth is-striped is-hoverable">
-                    <thead>
-                    <tr>
-                        <th>File</th>
-                    </tr>
-                    </thead>
-                    <tbody id="pagesTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Viewer -->
-        <div class="box" id="viewerBox" style="display:none;">
-            <h2 class="title is-5">Viewer</h2>
-            <p class="mb-2"><strong>PAGE:</strong> <span id="curPage"></span></p>
-            <div id="stats-panel" class="box" style="margin-top:.75rem; display:none;">
-                <div id="stats-content"></div>
-            </div>
-
-            <div id="osd"
-               style="width:100%; height:70vh; background:#111; position:relative; border:1px solid #333;"></div>
-
-            <div class="field is-grouped is-grouped-multiline">
-                <div class="control"><label class="checkbox"><input type="checkbox" id="cbRegions" checked> Show regions</label>
-                </div>
-                <div class="control"><label class="checkbox"><input type="checkbox" id="cbLines" checked> Show
-                    lines</label></div>
-            </div>
-        </div>
-
+    <div id="wsBox" class="box" style="display:none;">
+      <p class="mb-2">
+        <strong>Workspace-ID on server:</strong>
+        <span id="wsIdTag" class="tag is-info"></span>
+      </p>
+      <div class="buttons">
+        <button id="btnCommit" class="button is-success" disabled>Commit</button>
+        <button id="btnReset" class="button is-light">Start Over</button>
+      </div>
+      <p id="commitNotice" class="help is-success" style="display:none;">Committed ✓</p>
     </div>
+
+    <div class="box">
+      <h2 class="title is-5">0. (Optional) Upload METS</h2>
+      <form id="formMETS" enctype="multipart/form-data">
+        <div class="file has-name is-fullwidth">
+          <label class="file-label">
+            <input id="metsInput" class="file-input" type="file" name="file" accept=".xml">
+            <span class="file-cta">
+              <span class="file-icon">📦</span>
+              <span class="file-label">Choose METS (mets.xml)…</span>
+            </span>
+            <span id="metsInputName" class="file-name">No file selected</span>
+          </label>
+        </div>
+        <div class="mt-3">
+          <button class="button is-dark" type="submit">Upload METS</button>
+        </div>
+      </form>
+
+      <div id="fileGrpBox" class="mt-4" style="display:none;">
+        <p class="mb-2"><strong>Detected file groups</strong></p>
+        <div class="columns is-variable is-2">
+          <div class="column">
+            <label class="label">Image groups</label>
+            <div id="imgGrpList" class="content"><em>—</em></div>
+          </div>
+          <div class="column">
+            <label class="label">PAGE-XML groups</label>
+            <div id="pageGrpList" class="content"><em>—</em></div>
+          </div>
+        </div>
+      </div>
+
+      <p id="metsUploadMsg" class="help mt-2"></p>
+    </div>
+
+    <div class="box">
+      <h2 class="title is-5">1. Upload PAGE-XML files</h2>
+      <form id="formPages" enctype="multipart/form-data">
+        <div class="file has-name is-fullwidth">
+          <label class="file-label">
+            <input id="pagesInput" class="file-input" type="file" name="files[]" multiple accept=".xml">
+            <span class="file-cta">
+              <span class="file-icon">📄</span>
+              <span class="file-label">Choose PAGE-XML files …</span>
+            </span>
+            <span id="pagesInputName" class="file-name">No files selected</span>
+          </label>
+        </div>
+        <div class="mt-3">
+          <button class="button is-link" type="submit">Upload PAGE-XML</button>
+        </div>
+      </form>
+      <p id="pagesUploadMsg" class="help mt-2"></p>
+
+      <div id="missingPagesWrap" class="content mt-3" style="display:none;">
+        <p><strong>Missing PAGE-XML (from METS):</strong></p>
+        <ul id="missingPagesList"></ul>
+      </div>
+    </div>
+
+    <div class="box" id="imagesBox" style="display:none;">
+      <h2 class="title is-5">2. Upload images</h2>
+      <div id="missingWrap" class="content">
+        <p><strong>Missing images:</strong></p>
+        <ul id="missingList"></ul>
+      </div>
+      <form id="formImages" class="mt-3" enctype="multipart/form-data">
+        <div class="file has-name is-fullwidth">
+          <label class="file-label">
+            <input id="imagesInput" class="file-input" type="file" name="files[]" multiple
+                   accept=".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp,.gif,.jp2">
+            <span class="file-cta">
+              <span class="file-icon">🖼</span>
+              <span class="file-label">Choose images …</span>
+            </span>
+            <span id="imagesInputName" class="file-name">No files selected</span>
+          </label>
+        </div>
+        <div class="mt-3">
+          <button class="button is-primary" type="submit">Upload images</button>
+        </div>
+      </form>
+      <p id="imagesUploadMsg" class="help mt-2"></p>
+    </div>
+
+    <div class="box" id="pagesBox" style="display:none;">
+      <h2 class="title is-5">3. Open a PAGE</h2>
+      <div class="table-container">
+        <table class="table is-fullwidth is-striped is-hoverable">
+          <thead>
+          <tr>
+            <th>File</th>
+          </tr>
+          </thead>
+          <tbody id="pagesTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="box" id="viewerBox" style="display:none;">
+      <h2 class="title is-5">Viewer</h2>
+      <p class="mb-2"><strong>PAGE:</strong> <span id="curPage"></span></p>
+
+      <div id="stats-panel" class="box" style="margin-top:.75rem; display:none;">
+        <div id="stats-content"></div>
+      </div>
+
+      <div class="buttons mb-2">
+        <button id="btnFit" class="button is-small">Fit</button>
+        <button id="btnZoomIn" class="button is-small">＋</button>
+        <button id="btnZoomOut" class="button is-small">－</button>
+      </div>
+
+      <div id="osd"
+           style="width:100%; height:70vh; background:#111; position:relative; border:1px solid #333;"></div>
+
+      <div class="field is-grouped is-grouped-multiline mt-3">
+        <div class="control">
+          <label class="checkbox"><input type="checkbox" id="cbRegions" checked> Show regions</label>
+        </div>
+        <div class="control">
+          <label class="checkbox"><input type="checkbox" id="cbLines" checked> Show lines</label>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </section>
 
 {% endblock %}
