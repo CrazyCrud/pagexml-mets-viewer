@@ -14,21 +14,48 @@ $(function () {
     $('#wsBox').show();
   }
 
+  function populateGrpSelects(grps) {
+      const $selImg  = $('#selImgGrp');
+      const $selPage = $('#selPageGrp');
+      $selImg.empty();
+      $selPage.empty();
+
+      (grps.images || []).forEach(g => {
+        $selImg.append(new Option(g, g, false, grps.chosen && grps.chosen.image === g));
+      });
+      (grps.pagexml || []).forEach(g => {
+        $selPage.append(new Option(g, g, false, grps.chosen && grps.chosen.pagexml === g));
+      });
+
+      $('#fileGrpBox').show();
+    }
+
   function renderFileGrps(grps) {
-    if (!grps) { $('#fileGrpBox').hide(); return; }
-    fileGrps = grps;
-    const img = (grps.images || []).map(g => {
-      const chosen = grps.chosen && grps.chosen.image === g ? ' <span class="tag is-info is-light">default</span>' : '';
-      return `<li>${g}${chosen}</li>`;
-    }).join('') || '<li><em>none</em></li>';
-    const pag = (grps.pagexml || []).map(g => {
-      const chosen = grps.chosen && grps.chosen.pagexml === g ? ' <span class="tag is-info is-light">default</span>' : '';
-      return `<li>${g}${chosen}</li>`;
-    }).join('') || '<li><em>none</em></li>';
-    $('#imgGrpList').html(`<ul>${img}</ul>`);
-    $('#pageGrpList').html(`<ul>${pag}</ul>`);
-    $('#fileGrpBox').show();
-  }
+      if (!grps) { $('#fileGrpBox').hide(); return; }
+      // fill the <select> elements instead of static <ul> lists
+      populateGrpSelects(grps);
+    }
+
+  function refreshForSelection() {
+      if (!workspaceId) return;
+      const imgGrp  = $('#selImgGrp').val() || '';
+      const pageGrp = $('#selPageGrp').val() || '';
+      $.getJSON('/api/mets/select', {
+        workspace_id: workspaceId,
+        image_grp: imgGrp,
+        pagexml_grp: pageGrp
+      }).done(function (resp) {
+        // update state + UI
+        pages = resp.pages || [];
+        missingImages  = resp.missing_images || [];
+        missingPageXML = resp.missing_pagexml || [];
+        populateGrpSelects(resp.file_grps || null);
+        renderPages();
+        renderMissing();
+      }).fail(function (xhr) {
+        alert(`Failed to apply selection: ${xhr.responseText || xhr.status}`);
+      });
+    }
 
   function renderMissing() {
     // images
@@ -219,6 +246,9 @@ $(function () {
     $('#metsUploadMsg').text(''); $('#pagesUploadMsg').text(''); $('#imagesUploadMsg').text('');
     updateCommitUI(false);
   });
+
+
+  $(document).on('change', '#selImgGrp, #selPageGrp', refreshForSelection);
 
   $(document).on('click', 'a.pageLink', function (e) {
     e.preventDefault();

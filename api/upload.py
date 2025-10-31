@@ -383,3 +383,136 @@ def commit_import():
             continue
 
     return jsonify(ok=True, normalized=normalized, unresolved=unresolved)
+
+
+@bp_import.get("/mets/select")
+def mets_select():
+    """
+    Recompute required PAGE/XML and images using user-selected fileGrps.
+    Query:
+      workspace_id=... (required)
+      pagexml_grp=...  (optional; defaults to METS-chosen)
+      image_grp=...    (optional; defaults to METS-chosen)
+    Response:
+      {
+        workspace_id,
+        pages: [...],                 # required PAGE basenames (ordered if possible)
+        missing_images: [...],        # by stem (ext-agnostic)
+        missing_pagexml: [...],
+        file_grps: { images:[...], pagexml:[...], chosen:{image, pagexml} }
+      }
+    """
+    ws_id = (request.args.get("workspace_id") or "").strip()
+    if not ws_id:
+        return jsonify(error="workspace_id is required"), 400
+
+    p = _ws_paths(ws_id)
+    mets = (p["orig"] / "mets.xml")
+    if not mets.is_file():
+        return jsonify(error="No METS in this workspace."), 404
+
+    # Parse summary (to get available groups + defaults)
+    info = _extract_from_mets_rich(mets)
+
+    # Selected (fallback to defaults from METS)
+    chosen_page = (request.args.get("pagexml_grp") or "").strip() or info["file_grps"]["chosen"]["pagexml"]
+    chosen_img = (request.args.get("image_grp") or "").strip() or info["file_grps"]["chosen"]["image"]
+
+    # Re-parse METS here to build fileGrp map + structMap order
+    tree = etree.parse(str(mets))
+    root = tree.getroot()
+
+    # Build fileGrp -> files
+    filegrps = {}
+    for fg in root.xpath(".//mets:fileSec/mets:fileGrp", namespaces=NS):
+        use = (fg.get("USE") or "").strip()
+        if not use:
+            continue
+        files = []
+        for f in fg.xpath("./mets:file", namespaces=NS):
+            fid = f.get("ID") or ""
+            mt = (f.get("MIMETYPE") or "").strip()
+            fl = f.xpath("./mets:FLocat", namespaces=NS)
+            href = fl[0].get(f"{{{NS['xlink']}}}href") if fl else ""
+            files.append({"id": fid, "href": href, "mimetype": mt})
+        filegrps[use] = files
+
+    f_by_id = {f["id"]: f for fs in filegrps.values() for f in fs}
+
+    # Build page order (suffix list) from PHYSICAL structMap if present
+    def _suffix_from(fid: str, href: str) -> str:
+        # prefer numeric/last segment after '_' from ID, else from href stem
+        if fid:
+            part = fid.rsplit("_", 1)[-1] if "_" in fid else fid
+        else:
+            stem = Path(href).stem
+            part = stem.rsplit("_", 1)[-1] if "_" in stem else stem
+        return part
+
+    pages_ordered_suffix = []
+    divs = root.xpath(".//mets:structMap[@TYPE='PHYSICAL']//mets:div[@TYPE='page']", namespaces=NS)
+    if divs:
+        for d in divs:
+            label = (d.get("ORDERLABEL") or "").strip()
+            if label:
+                pages_ordered_suffix.append(label)
+            else:
+                did = d.get("ID") or ""
+                pages_ordered_suffix.append(did.rsplit("_", 1)[-1] if "_" in did else did)
+
+    # Helper: index one group's files by derived page suffix
+    def _index_by_suffix(files):
+        out = {}
+        for f in files:
+            out[_suffix_from(f.get("id", ""), f.get("href", ""))] = f
+        return out
+
+    # Choose files from the selected groups; preserve structMap order when available
+    if chosen_img and chosen_img in filegrps:
+        if pages_ordered_suffix:
+            idx = _index_by_suffix(filegrps[chosen_img])
+            image_files = [idx[s] for s in pages_ordered_suffix if s in idx]
+            # append leftovers (not referenced in structMap) at the end
+            seen = {id(f) for f in image_files}
+            image_files += [f for f in filegrps[chosen_img] if id(f) not in seen]
+        else:
+            image_files = list(filegrps[chosen_img])
+    else:
+        image_files = []
+
+    if chosen_page and chosen_page in filegrps:
+        if pages_ordered_suffix:
+            idx = _index_by_suffix(filegrps[chosen_page])
+            pagexml_files = [idx[s] for s in pages_ordered_suffix if s in idx]
+            seen = {id(f) for f in pagexml_files}
+            pagexml_files += [f for f in filegrps[chosen_page] if id(f) not in seen]
+        else:
+            pagexml_files = list(filegrps[chosen_page])
+    else:
+        pagexml_files = []
+
+    # Basenames to require (for the selected groups only)
+    page_basenames = [Path(x["href"]).name for x in pagexml_files if x.get("href")]
+    image_basenames = [Path(x["href"]).name for x in image_files if x.get("href")]
+
+    # IMPORTANT: replace (do NOT union) so switching groups updates names
+    state = _load_state(p)
+    state["required_pagexml"] = page_basenames
+    state["required_images"] = image_basenames
+    state["file_grps"] = {
+        "images": info["file_grps"]["images"],
+        "pagexml": info["file_grps"]["pagexml"],
+        "chosen": {"image": chosen_img, "pagexml": chosen_page},
+    }
+    _save_state(p, state)
+
+    missing_images = _missing_images_ext_agnostic(p)
+    missing_pagexml = _missing_pagexml(p)
+
+    return jsonify(
+        workspace_id=p["id"],
+        pages=page_basenames,
+        missing_images=missing_images,
+        missing_pagexml=missing_pagexml,
+        file_grps=state["file_grps"]
+    )
