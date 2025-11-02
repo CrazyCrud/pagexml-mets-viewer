@@ -229,7 +229,7 @@ def get_page():
 
     coords = page_coords(pcgts)
     regions = collect_regions(pcgts, coords)
-    lines = collect_lines(pcgts, coords)
+    lines = collect_lines(pcgts, coords, page_xml)
 
     # Page ID extraction
     p = getattr(pcgts, "get_Page", None)

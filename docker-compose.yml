@@ -2,21 +2,24 @@ services:
   viewer:
     build:
       context: .
-      # network: host
     image: ocrd-page-mets-viewer:latest
     ports:
       - "8000:8000"
+    command: >
+      gunicorn app:app
+      --bind 0.0.0.0:8000
+      --workers 1
+      --threads 4
+      --timeout 120
+      --reload
     environment:
-      GUNICORN_APP: "app:create_app()"
-      GUNICORN_WORKERS: "1"
-      GUNICORN_THREADS: "8"
-      GUNICORN_TIMEOUT: "120"
-      FLASK_ENV: "production"
+      FLASK_ENV: "development"
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
-      - ./data:/app/data
+      - ./:/app:delegated
+      - ./data/workspaces:/app/data/workspaces
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5

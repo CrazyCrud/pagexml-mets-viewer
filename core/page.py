@@ -1,8 +1,9 @@
 from __future__ import annotations
 from typing import Union
 from pathlib import Path
-from typing import Dict, Callable, List, Optional, Tuple
+from typing import Any, Dict, Callable, List, Optional, Tuple
 import re
+from lxml import etree
 from ocrd_models.ocrd_page_generateds import parse as parse_pagexml
 from ocrd_models.ocrd_page import PcGtsType, OcrdPage
 
@@ -69,9 +70,218 @@ def collect_regions(pcgts: PcGtsType, page_coords: Dict) -> List[Dict]:
     return _collect_regions(pcgts, page_coords)
 
 
-def collect_lines(pcgts: PcGtsType, page_coords: Dict) -> List[Dict]:
-    """Collect all lines (with baseline if present) as frontend-ready dicts."""
-    return _collect_lines(pcgts, page_coords)
+def collect_lines(pcgts: Any, page_coords: Dict[str, Any], xml_path: Optional[str | Path] = None) -> List[Dict]:
+    """
+    Collect TextLine polygons and baselines.
+    Strategy:
+      1) Try OCR-D generateds: Page -> TextRegion -> TextLine
+      2) If none found, fallback to lxml XPath on xml_path (if provided)
+    Applies homography/transform from page_coords["transform"] if present.
+    """
+    H = (page_coords or {}).get("transform")
+
+    def _parse_points_str(s: Optional[str]) -> List[Tuple[float, float]]:
+        if not s:
+            return []
+        out: List[Tuple[float, float]] = []
+        for pair in s.strip().split():
+            if "," in pair:
+                x, y = pair.split(",", 1)
+            elif ";" in pair:
+                x, y = pair.split(";", 1)
+            else:
+                parts = pair.split()
+                if len(parts) >= 2:
+                    x, y = parts[0], parts[1]
+                else:
+                    continue
+            try:
+                out.append((float(x), float(y)))
+            except Exception:
+                continue
+        return out
+
+    def _apply(pts: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+        if not pts or H is None:
+            return pts
+        if callable(H):
+            try:
+                return H(pts)
+            except Exception:
+                return pts
+        for attr in ("project", "map", "apply", "__call__"):
+            fn = getattr(H, attr, None)
+            if callable(fn):
+                try:
+                    return fn(pts)
+                except Exception:
+                    break
+        return pts
+
+    def _first_text_from_obj(line) -> Optional[str]:
+        try:
+            te_list = line.get_TextEquiv() or []
+            if te_list:
+                te = te_list[0]
+                if hasattr(te, "get_Unicode") and callable(te.get_Unicode):
+                    return te.get_Unicode()
+                if hasattr(te, "Unicode"):
+                    return te.Unicode
+        except Exception:
+            pass
+        return None
+
+    def _conf_of_obj(obj) -> Optional[float]:
+        try:
+            if hasattr(obj, "get_conf") and callable(obj.get_conf):
+                c = obj.get_conf()
+                if c is not None:
+                    return float(c)
+        except Exception:
+            pass
+        try:
+            te_list = getattr(obj, "get_TextEquiv", lambda: [])() or []
+            if te_list:
+                te = te_list[0]
+                if hasattr(te, "get_conf") and callable(te.get_conf):
+                    c = te.get_conf()
+                    if c is not None:
+                        return float(c)
+        except Exception:
+            pass
+        return None
+
+    out: List[Dict] = []
+
+    # -------- 1) OCR-D generateds path --------
+    get_Page = getattr(pcgts, "get_Page", None)
+    page = get_Page() if callable(get_Page) else getattr(pcgts, "Page", None)
+
+    if page is not None:
+        regions = getattr(page, "get_TextRegion", lambda: [])() or []
+        for reg in regions:
+            try:
+                region_id = reg.get_id()
+            except Exception:
+                region_id = getattr(reg, "id", "") or ""
+
+            lines = getattr(reg, "get_TextLine", lambda: [])() or []
+            if not lines:
+                # rare: some versions expose attribute list
+                lines = getattr(reg, "TextLine", []) or []
+
+            for ln in lines:
+                try:
+                    lid = ln.get_id()
+                except Exception:
+                    lid = getattr(ln, "id", "") or ""
+
+                # Coords
+                poly_raw: List[Tuple[float, float]] = []
+                try:
+                    lc = ln.get_Coords()
+                    if lc:
+                        pts_attr = lc.get_points() if hasattr(lc, "get_points") else getattr(lc, "points", None)
+                        poly_raw = _parse_points_str(pts_attr)
+                except Exception:
+                    pass
+                poly = _apply(poly_raw)
+
+                # Baseline
+                base_raw: List[Tuple[float, float]] = []
+                try:
+                    bl = ln.get_Baseline()
+                    if bl:
+                        bpts_attr = bl.get_points() if hasattr(bl, "get_points") else getattr(bl, "points", None)
+                        base_raw = _parse_points_str(bpts_attr)
+                except Exception:
+                    pass
+                base = _apply(base_raw)
+
+                if not poly and not base:
+                    continue
+
+                out.append({
+                    "id": lid,
+                    "region_id": region_id,
+                    "points": poly,
+                    "baseline": base,
+                    "text": _first_text_from_obj(ln),
+                    "conf": _conf_of_obj(ln),
+                })
+
+    if out:
+        return out
+
+    # -------- 2) Fallback: lxml XPath scan --------
+    if not xml_path:
+        return out  # cannot fallback without path
+
+    p = Path(xml_path)
+    if not p.is_file():
+        return out
+
+    try:
+        tree = etree.parse(str(p))
+        root = tree.getroot()
+        # find a PAGE namespace from nsmap dynamically
+        page_ns = None
+        for k, v in (root.nsmap or {}).items():
+            if v and "primaresearch.org/PAGE/gts/pagecontent" in v:
+                page_ns = v
+                break
+        ns = {"pc": page_ns} if page_ns else {}
+        # Regions + lines
+        # If namespace is missing for any reason, use local-name() fallback
+        if ns:
+            regions_xpath = root.xpath(".//pc:TextRegion", namespaces=ns)
+        else:
+            regions_xpath = root.xpath(".//*[local-name()='TextRegion']")
+        for reg in regions_xpath:
+            region_id = reg.get("id", "") or ""
+            if ns:
+                lines_xpath = reg.xpath("./pc:TextLine", namespaces=ns)
+            else:
+                lines_xpath = reg.xpath("./*[local-name()='TextLine']")
+            for ln in lines_xpath:
+                lid = ln.get("id", "") or ""
+
+                # Coords
+                if ns:
+                    c = ln.xpath("./pc:Coords/@points", namespaces=ns)
+                else:
+                    c = ln.xpath("./*[local-name()='Coords']/@points")
+                poly = _apply(_parse_points_str(c[0] if c else None))
+
+                # Baseline
+                if ns:
+                    b = ln.xpath("./pc:Baseline/@points", namespaces=ns)
+                else:
+                    b = ln.xpath("./*[local-name()='Baseline']/@points")
+                base = _apply(_parse_points_str(b[0] if b else None))
+
+                if not poly and not base:
+                    continue
+
+                # Text (first TextEquiv/Unicode)
+                if ns:
+                    t = ln.xpath("./pc:TextEquiv/pc:Unicode/text()", namespaces=ns)
+                else:
+                    t = ln.xpath("./*[local-name()='TextEquiv']/*[local-name()='Unicode']/text()")
+                text = t[0] if t else None
+
+                out.append({
+                    "id": lid,
+                    "region_id": region_id,
+                    "points": poly,
+                    "baseline": base,
+                    "text": text,
+                    "conf": None,  # XPath fallback: skip conf unless you want to query @conf
+                })
+    except Exception:
+        pass
+
+    return out
 
 
 def _parse_pcgts(page_xml_path) -> PcGtsType:
@@ -139,62 +349,144 @@ def _collect_regions(pcgts, page_coords) -> List[Dict]:
     return out
 
 
-def _collect_lines(pcgts, page_coords) -> List[Dict]:
-    H = page_coords.get("transform")
+def _collect_lines(pcgts: Any, page_coords: Dict[str, Any]) -> List[Dict]:
+    H = (page_coords or {}).get("transform")
     out: List[Dict] = []
 
-    get_Page: Optional[Callable[[], OcrdPage]] = getattr(pcgts, "get_Page", None)
-    if callable(get_Page):
-        page = get_Page()
-    else:
-        # Some versions of OCR-D expose Page as an attribute
-        page = getattr(pcgts, "Page", None)
-
-    # iterate by region to keep context
-    for reg in (page.get_TextRegion() or []):
-        region_id = getattr(reg, "id", None) or ""
-        for line in (reg.get_TextLine() or []):
-            lid = getattr(line, "id", None) or ""
-
-            # polygon
-            lcoords = getattr(line, "get_Coords", lambda: None)()
-            lpts: List[Tuple[float, float]] = []
-            if lcoords:
-                try:
-                    lpts = _parse_points_str(lcoords.points)
-                except Exception:
-                    lpts = []
-            lpts_t = _apply_homography(lpts, H)
-
-            # baseline
-            bl = getattr(line, "get_Baseline", lambda: None)()
-            blpts: List[Tuple[float, float]] = []
-            if bl and getattr(bl, "points", None):
-                try:
-                    blpts = _parse_points_str(bl.points)
-                except Exception:
-                    blpts = []
-            blpts_t = _apply_homography(blpts, H)
-
-            # text + conf (first TextEquiv)
-            text = ""
-            conf = None
+    def _parse_points_str(s: Optional[str]) -> List[Tuple[float, float]]:
+        if not s:
+            return []
+        pts: List[Tuple[float, float]] = []
+        for pair in s.strip().split():
+            if "," in pair:
+                x, y = pair.split(",", 1)
+            elif ";" in pair:  # tolerate semicolons
+                x, y = pair.split(";", 1)
+            else:
+                parts = pair.split()
+                if len(parts) >= 2:
+                    x, y = parts[0], parts[1]
+                else:
+                    continue
             try:
-                te = line.get_TextEquiv()
-                if te:
-                    text = te[0].Unicode or ""
-                    c = te[0].conf
-                    conf = float(c) if c is not None else None
+                pts.append((float(x), float(y)))
             except Exception:
-                pass  # TODO
+                continue
+        return pts
+
+    def _apply(pts: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+        if not pts or H is None:
+            return pts
+        if callable(H):
+            try:
+                return H(pts)
+            except Exception:
+                return pts
+        for attr in ("project", "map", "apply", "__call__"):
+            fn = getattr(H, attr, None)
+            if callable(fn):
+                try:
+                    return fn(pts)
+                except Exception:
+                    break
+        return pts
+
+    def _first_text(line) -> Optional[str]:
+        try:
+            te_list = line.get_TextEquiv() or []
+            if te_list:
+                te = te_list[0]
+                if hasattr(te, "get_Unicode") and callable(te.get_Unicode):
+                    return te.get_Unicode()
+                if hasattr(te, "Unicode"):
+                    return te.Unicode
+        except Exception:
+            pass
+        return None
+
+    def _conf_of(obj) -> Optional[float]:
+        try:
+            if hasattr(obj, "get_conf") and callable(obj.get_conf):
+                c = obj.get_conf()
+                if c is not None:
+                    return float(c)
+        except Exception:
+            pass
+        try:
+            te_list = getattr(obj, "get_TextEquiv", lambda: [])() or []
+            if te_list:
+                te = te_list[0]
+                if hasattr(te, "get_conf") and callable(te.get_conf):
+                    c = te.get_conf()
+                    if c is not None:
+                        return float(c)
+        except Exception:
+            pass
+        return None
+
+    # --- traverse PAGE ---
+    get_Page: Optional = getattr(pcgts, "get_Page", None)
+    page = get_Page() if callable(get_Page) else getattr(pcgts, "Page", None)
+    if page is None:
+        return out
+
+    # Be generous about where TextLines live: region.get_TextLine() is the norm
+    regions = getattr(page, "get_TextRegion", lambda: [])() or []
+    for reg in regions:
+        print("Iterate region")
+        try:
+            region_id = reg.get_id()
+        except Exception:
+            region_id = getattr(reg, "id", "") or ""
+
+        # Some versions: get_TextLine() may be None/[]; keep defensive
+        lines = getattr(reg, "get_TextLine", lambda: [])() or []
+        print(lines)
+        # Fallbacks seen in the wild (rare, but harmless to check):
+        if not lines:
+            lines = getattr(reg, "TextLine", []) or lines
+            lines = list(lines) if lines else []
+
+        for ln in lines:
+            try:
+                lid = ln.get_id()
+            except Exception:
+                lid = getattr(ln, "id", "") or ""
+
+            # Coords polygon
+            poly_raw: List[Tuple[float, float]] = []
+            try:
+                lc = ln.get_Coords()
+                if lc:
+                    pts_attr = lc.get_points() if hasattr(lc, "get_points") else getattr(lc, "points", None)
+                    poly_raw = _parse_points_str(pts_attr)
+            except Exception:
+                pass
+            poly = _apply(poly_raw)
+
+            # Baseline polyline
+            base_raw: List[Tuple[float, float]] = []
+            try:
+                bl = ln.get_Baseline()
+                if bl:
+                    bpts_attr = bl.get_points() if hasattr(bl, "get_points") else getattr(bl, "points", None)
+                    base_raw = _parse_points_str(bpts_attr)
+            except Exception:
+                pass
+            base = _apply(base_raw)
+
+            # keep the line even if only baseline or only polygon is present
+            if not poly and not base:
+                # extremely defensive: skip truly empty geometry
+                continue
 
             out.append({
                 "id": lid,
                 "region_id": region_id,
-                "points": lpts_t,
-                "baseline": blpts_t,
-                "text": text,
-                "conf": conf,
+                "points": poly,
+                "baseline": base,
+                "text": _first_text(ln),
+                "conf": _conf_of(ln),
             })
 
     return out

@@ -338,51 +338,60 @@ def commit_import():
       - If Page/@imageFilename exists, rewrite to "images/<basename>".
       - If missing or extension mismatch, resolve by STEM against uploaded images and set accordingly.
     """
-    ws_id = (request.args.get("workspace_id") or "").strip()
+    ws_id = request.args.get("workspace_id")
     if not ws_id:
         return jsonify(error="workspace_id is required"), 400
     p = _ws_paths(ws_id)
-    _load_state(p)  # ensure state exists
-
-    images = [q for q in p["images"].glob("*") if q.is_file()]
-    by_stem = {}
-    for q in images:
-        s = _lower_stem(q.name)
-        by_stem.setdefault(s, q.name)
 
     normalized = []
-    unresolved = []
+
+    # Prefer the high-level to_xml helper if available
+    try:
+        from ocrd_models.ocrd_page import to_xml as page_to_xml
+    except Exception:
+        page_to_xml = None
+
+    # Fallback constants for direct export (adjust version if you need a different PAGE schema)
+    PAGE_NS = "http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15"
+    XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+    SCHEMA_LOC = f"{PAGE_NS} {PAGE_NS}/pagecontent.xsd"
+    namespacedef = f'xmlns:pc="{PAGE_NS}" xmlns:xsi="{XSI_NS}" xsi:schemaLocation="{SCHEMA_LOC}"'
 
     for src in p["pages"].glob("*.xml"):
         try:
-            pcgts: PcGtsType = parse_pagexml(str(src))
+            pcgts = parse_pagexml(str(src))  # from ocrd_models.ocrd_page_generateds
             page = pcgts.get_Page()
-            img = (page.get_imageFilename() or "").strip()
 
+            # Rewrite imageFilename to a clean, workspace-relative path
+            img = page.get_imageFilename()
             if img:
-                hinted = Path(img).name
-                stem = _lower_stem(hinted)
+                basename = Path(img).name
+                page.set_imageFilename(f"images/{basename}")
+
+            dst = (p["norm"] / src.name)
+
+            if page_to_xml:
+                # ✅ Proper namespaces and XML declaration handled for you
+                xml_bytes = page_to_xml(pcgts, pretty_print=True)  # returns bytes
+                dst.write_bytes(xml_bytes)
             else:
-                stem = _strip_ocrd_prefix(_lower_stem(src.name))
+                # Fallback: export with explicit namespacedef and correct root element name
+                # NOTE: name_ must be 'PcGts' (not 'PcGtsType')
+                with open(dst, "wb") as fh:
+                    pcgts.export(
+                        fh, 0,
+                        name_="PcGts",
+                        namespacedef_=namespacedef,
+                        pretty_print=True,
+                    )
 
-            chosen = by_stem.get(stem)
-            if not chosen and img:
-                if (p["images"] / Path(img).name).is_file():
-                    chosen = Path(img).name
-
-            if chosen:
-                page.set_imageFilename(f"images/{chosen}")
-            elif img:
-                page.set_imageFilename(f"images/{Path(img).name}")
-
-            out = (p["norm"] / src.name)
-            out.write_text(_serialize_pcgts(pcgts), encoding="utf-8")
-            normalized.append(out.name)
-        except Exception:
-            unresolved.append(src.name)
+            normalized.append(dst.name)
+        except Exception as e:
+            # log if you like; continue best-effort
+            # print(f"normalize failed for {src}: {e}")
             continue
 
-    return jsonify(ok=True, normalized=normalized, unresolved=unresolved)
+    return jsonify(ok=True, normalized=normalized)
 
 
 @bp_import.get("/mets/select")
