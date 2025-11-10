@@ -85,6 +85,13 @@ class OSDViewer {
           poly.setAttribute('stroke', '#00c800');
           poly.setAttribute('stroke-opacity', '0.9');
           poly.setAttribute('stroke-width', '1');
+
+          if (l.text && l.text.trim().length > 0) {
+              const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+              titleEl.textContent = l.text;
+              poly.appendChild(titleEl);
+            }
+
           this.gLines.appendChild(poly);
         }
         if (l.baseline && l.baseline.length) {
@@ -95,6 +102,13 @@ class OSDViewer {
             pl.setAttribute('stroke', '#ff5050');
             pl.setAttribute('stroke-opacity', '0.9');
             pl.setAttribute('stroke-width', '1.5');
+
+            if (l.text && l.text.trim().length > 0) {
+              const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+              titleEl.textContent = l.text;
+              pl.appendChild(titleEl);
+            }
+
             this.gLines.appendChild(pl);
         }
       }
