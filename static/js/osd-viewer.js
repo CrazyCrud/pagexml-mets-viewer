@@ -39,6 +39,25 @@ class OSDViewer {
     this.viewer.addHandler('resize', () => this._anchorSvgToImage());
   }
 
+    // put this near the top of osd-viewer.js (or above setOverlays)
+    styleForRegion(type) {
+      // Normalize to a safe key
+      const t = (type || '').toLowerCase();
+
+      // Pick colors per region type
+      const map = {
+        'TextRegion':   { fill: '#0080ff', stroke: '#0080ff', fillOpacity: 0.20, strokeWidth: 1 },
+        'TableRegion':  { fill: '#ffa500', stroke: '#ffa500', fillOpacity: 0.18, strokeWidth: 1.2, dash: '4 3' },
+        'imageregion':  { fill: '#7c4dff', stroke: '#7c4dff', fillOpacity: 0.15, strokeWidth: 1 },
+        'separatorregion': { fill: '#00bcd4', stroke: '#00bcd4', fillOpacity: 0.15, strokeWidth: 1, dash: '2 3' },
+        'mathsregion':  { fill: '#e91e63', stroke: '#e91e63', fillOpacity: 0.18, strokeWidth: 1 },
+        'headingregion':{ fill: '#4caf50', stroke: '#4caf50', fillOpacity: 0.18, strokeWidth: 1 },
+      };
+
+      // Fallback for unknown types
+      return map[t] || { fill: '#999999', stroke: '#999999', fillOpacity: 0.12, strokeWidth: 1 };
+    }
+
   setToggles({regions, lines}) {
     if (typeof regions === 'boolean') this.showRegions = regions;
     if (typeof lines   === 'boolean') this.showLines   = lines;
@@ -60,18 +79,30 @@ class OSDViewer {
     // Regions
     if (regions && regions.length) {
       for (const r of regions) {
-        if (!r.points || !r.points.length) continue;
-        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        poly.setAttribute('class', 'region');
-        poly.setAttribute('points', r.points.map(([x,y]) => `${x},${y}`).join(' '));
-        // ---- force visible fill ----
-        poly.setAttribute('fill', '#0080ff');
-        poly.setAttribute('fill-opacity', '0.2');      // 80% transparent
-        poly.setAttribute('stroke', '#0080ff');
-        poly.setAttribute('stroke-opacity', '0.9');
-        poly.setAttribute('stroke-width', '1');
-        this.gRegions.appendChild(poly);
-      }
+          if (!r.points || !r.points.length) continue;
+
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          poly.setAttribute('class', 'region');
+          poly.setAttribute('points', r.points.map(([x,y]) => `${x},${y}`).join(' '));
+
+          // apply style based on region type
+          const sty = this.styleForRegion(r.type);
+          poly.setAttribute('fill', sty.fill);
+          poly.setAttribute('fill-opacity', String(sty.fillOpacity));
+          poly.setAttribute('stroke', sty.stroke);
+          poly.setAttribute('stroke-opacity', '0.9');
+          poly.setAttribute('stroke-width', String(sty.strokeWidth));
+          if (sty.dash) poly.setAttribute('stroke-dasharray', sty.dash);
+
+          // optional tooltip: show the type on hover
+          if (r.type) {
+            const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            titleEl.textContent = r.type;
+            poly.appendChild(titleEl);
+          }
+
+          this.gRegions.appendChild(poly);
+        }
     }
     // Lines + baselines
     if (lines && lines.length) {

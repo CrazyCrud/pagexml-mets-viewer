@@ -54,3 +54,11 @@
 #status {
   color: #485fc7;
 }
+
+.legend {
+    display:flex; gap:.5rem; align-items:center; margin:.5rem 0;
+}
+
+.legend .chip {
+    padding:.15rem .5rem; border-radius:.4rem; font-size:.85rem;
+}
