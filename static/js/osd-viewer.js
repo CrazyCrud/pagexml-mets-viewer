@@ -46,8 +46,8 @@ class OSDViewer {
 
       // Pick colors per region type
       const map = {
-        'TextRegion':   { fill: '#0080ff', stroke: '#0080ff', fillOpacity: 0.20, strokeWidth: 1 },
-        'TableRegion':  { fill: '#ffa500', stroke: '#ffa500', fillOpacity: 0.18, strokeWidth: 1.2, dash: '4 3' },
+        'textregion':   { fill: '#0080ff', stroke: '#0080ff', fillOpacity: 0.20, strokeWidth: 1 },
+        'tableregion':  { fill: '#ffa500', stroke: '#ffa500', fillOpacity: 0.20, strokeWidth: 1.2, dash: '4 3' },
         'imageregion':  { fill: '#7c4dff', stroke: '#7c4dff', fillOpacity: 0.15, strokeWidth: 1 },
         'separatorregion': { fill: '#00bcd4', stroke: '#00bcd4', fillOpacity: 0.15, strokeWidth: 1, dash: '2 3' },
         'mathsregion':  { fill: '#e91e63', stroke: '#e91e63', fillOpacity: 0.18, strokeWidth: 1 },
@@ -87,6 +87,9 @@ class OSDViewer {
 
           // apply style based on region type
           const sty = this.styleForRegion(r.type);
+
+          console.log(sty);
+
           poly.setAttribute('fill', sty.fill);
           poly.setAttribute('fill-opacity', String(sty.fillOpacity));
           poly.setAttribute('stroke', sty.stroke);
