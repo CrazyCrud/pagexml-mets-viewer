@@ -9,6 +9,29 @@ class OSDViewer {
     this.showRegions = true;
     this.showLines = true;
     this._mountedEl = null;
+
+    this._textRegionColors = new Map();
+  }
+
+  _hueFromId(id) {
+    let h = 0;
+    const s = String(id || '');
+    for (let i = 0; i < s.length; i++) {
+      h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    }
+    return h % 360;
+  }
+
+  _hsl(h, s = 60, l = 50) {
+    return `hsl(${h}, ${s}%, ${l}%)`;
+  }
+
+  _colorForTextRegion(id) {
+    if (!this._textRegionColors.has(id)) {
+      const hue = this._hueFromId(id);
+      this._textRegionColors.set(id, this._hsl(hue, 62, 48));
+    }
+    return this._textRegionColors.get(id);
   }
 
   mount(el) {
@@ -40,23 +63,22 @@ class OSDViewer {
   }
 
     // put this near the top of osd-viewer.js (or above setOverlays)
-    styleForRegion(type) {
-      // Normalize to a safe key
-      const t = (type || '').toLowerCase();
+    styleForRegion(type, region) {
+        const t = (type || '').toLowerCase();
 
-      // Pick colors per region type
-      const map = {
-        'textregion':   { fill: '#0080ff', stroke: '#0080ff', fillOpacity: 0.20, strokeWidth: 1 },
-        'tableregion':  { fill: '#ffa500', stroke: '#ffa500', fillOpacity: 0.20, strokeWidth: 1.2, dash: '4 3' },
-        'imageregion':  { fill: '#7c4dff', stroke: '#7c4dff', fillOpacity: 0.15, strokeWidth: 1 },
-        'separatorregion': { fill: '#00bcd4', stroke: '#00bcd4', fillOpacity: 0.15, strokeWidth: 1, dash: '2 3' },
-        'mathsregion':  { fill: '#e91e63', stroke: '#e91e63', fillOpacity: 0.18, strokeWidth: 1 },
-        'headingregion':{ fill: '#4caf50', stroke: '#4caf50', fillOpacity: 0.18, strokeWidth: 1 },
-      };
+        if (t === 'tableregion') {
+          return { fill: 'none', stroke: '#ffa500', fillOpacity: 0, strokeWidth: 2, dash: '4 3' };
+        }
 
-      // Fallback for unknown types
-      return map[t] || { fill: '#999999', stroke: '#999999', fillOpacity: 0.12, strokeWidth: 1 };
-    }
+        if (t === 'textregion') {
+          const col = this._colorForTextRegion(region?.id || '');
+          // outline colored, optional very faint fill
+          return { fill: col, stroke: col, fillOpacity: 0.08, strokeWidth: 1.4 };
+        }
+
+        // fallback for other region types
+        return { fill: '#999', stroke: '#999', fillOpacity: 0.12, strokeWidth: 1 };
+  }
 
   setToggles({regions, lines}) {
     if (typeof regions === 'boolean') this.showRegions = regions;
@@ -79,33 +101,34 @@ class OSDViewer {
     // Regions
     if (regions && regions.length) {
       for (const r of regions) {
-          if (!r.points || !r.points.length) continue;
+        if (!r.points || !r.points.length) continue;
 
-          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-          poly.setAttribute('class', 'region');
-          poly.setAttribute('points', r.points.map(([x,y]) => `${x},${y}`).join(' '));
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('class', 'region');
+        poly.setAttribute('points', r.points.map(([x,y]) => `${x},${y}`).join(' '));
 
-          // apply style based on region type
-          const sty = this.styleForRegion(r.type);
-
-          console.log(sty);
-
+        const sty = this.styleForRegion(r.type, r);
+        if (sty.fill === 'none') {
+          poly.setAttribute('fill', 'none');
+        } else {
           poly.setAttribute('fill', sty.fill);
-          poly.setAttribute('fill-opacity', String(sty.fillOpacity));
-          poly.setAttribute('stroke', sty.stroke);
-          poly.setAttribute('stroke-opacity', '0.9');
-          poly.setAttribute('stroke-width', String(sty.strokeWidth));
-          if (sty.dash) poly.setAttribute('stroke-dasharray', sty.dash);
-
-          // optional tooltip: show the type on hover
-          if (r.type) {
-            const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            titleEl.textContent = r.type;
-            poly.appendChild(titleEl);
-          }
-
-          this.gRegions.appendChild(poly);
+          poly.setAttribute('fill-opacity', String(sty.fillOpacity ?? 0.1));
         }
+        poly.style.setProperty('fill', sty.fill);
+        poly.style.setProperty('fill-opacity', String(sty.fillOpacity ?? 0.2));
+        poly.style.setProperty('stroke', sty.stroke);
+        poly.style.setProperty('stroke-opacity', '0.9');
+        poly.style.setProperty('stroke-width', String(sty.strokeWidth ?? 1));
+        if (sty.dash) poly.style.setProperty('stroke-dasharray', sty.dash);
+
+        if (r.type) {
+          const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+          titleEl.textContent = r.type;
+          poly.appendChild(titleEl);
+        }
+
+        this.gRegions.appendChild(poly);
+      }
     }
     // Lines + baselines
     if (lines && lines.length) {

@@ -6,12 +6,15 @@ services:
     ports:
       - "8000:8000"
     command: >
-      gunicorn app:app
-      --bind 0.0.0.0:8000
-      --workers 1
-      --threads 4
-      --timeout 120
-      --reload
+      gunicorn "app:create_app()"
+        --bind 0.0.0.0:8000
+        --workers 1
+        --threads 4
+        --timeout 120
+        --reload
+        --log-level debug
+        --reload-extra-file templates
+        --reload-extra-file static
     environment:
       FLASK_ENV: "development"
     user: "${UID:-1000}:${GID:-1000}"

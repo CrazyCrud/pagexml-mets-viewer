@@ -10,8 +10,10 @@ def create_app():
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.update(
         SECRET_KEY="dev",
-        TEMPLATES_AUTO_RELOAD=True
+        TEMPLATES_AUTO_RELOAD=True,
+        SEND_FILE_MAX_AGE_DEFAULT=0
     )
+    app.jinja_env.auto_reload = True
 
     app.register_blueprint(bp_page, url_prefix="/api")
     app.register_blueprint(bp_mets, url_prefix="/api")

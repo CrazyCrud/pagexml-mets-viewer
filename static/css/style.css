@@ -18,10 +18,10 @@
 }
 
 #osd svg g[data-layer="regions"] .region {
-  stroke: rgba(0,128,255,0.9);
+  fill: transparent;
+  stroke: transparent;
+  /* keep width if you want, or let JS set it */
   stroke-width: 1px;
-  fill: #0080ff;            /* solid color */
-  fill-opacity: 0.2;        /* 80% transparent */
 }
 
 #osd svg g[data-layer="lines"] .line {
