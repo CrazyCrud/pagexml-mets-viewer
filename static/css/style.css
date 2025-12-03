@@ -62,3 +62,16 @@
 .legend .chip {
     padding:.15rem .5rem; border-radius:.4rem; font-size:.85rem;
 }
+
+.line-editor {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.line-row {
+  margin-bottom: 0.75rem;
+}
+
+.line-row .textarea {
+  font-family: monospace;
+}

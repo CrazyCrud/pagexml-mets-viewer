@@ -10,6 +10,7 @@ import re
 from werkzeug.utils import secure_filename
 from ocrd_models.ocrd_page_generateds import parse as parse_pagexml
 from ocrd_models.ocrd_page import PcGtsType
+from core.db import record_workspace
 
 bp_import = Blueprint("import", __name__)
 
@@ -154,6 +155,18 @@ def _missing_pagexml(p: Dict[str, Path]) -> list[str]:
     return sorted(required - have)
 
 
+def _touch_db(p: Dict[str, Path], state: Optional[Dict] = None):
+    """
+    Persist workspace metadata into the lightweight SQLite DB.
+    """
+    state = state or _load_state(p)
+    record_workspace(
+        p["id"],
+        page_count=len(state.get("pages", [])),
+        has_mets=bool(state.get("mets"))
+    )
+
+
 def _extract_from_mets_rich(mets_path: Path) -> dict:
     """
     Parse METS and return fileGrp summary + ordered file lists (if structMap present).
@@ -254,6 +267,7 @@ def upload_pages():
             pass
     state["required_images"] = sorted(req)
     _save_state(p, state)
+    _touch_db(p, state)
 
     missing = _missing_images_ext_agnostic(p)
     return jsonify(workspace_id=p["id"], pages=state["pages"], missing_images=missing)
@@ -286,6 +300,7 @@ def upload_mets():
     state["required_images"] = sorted(set(state.get("required_images", [])).union(image_basenames))
     state["file_grps"] = info.get("file_grps", {})
     _save_state(p, state)
+    _touch_db(p, state)
 
     missing_images = _missing_images_ext_agnostic(p)
     missing_pagexml = _missing_pagexml(p)
@@ -325,6 +340,7 @@ def upload_images():
 
     state["images"] = sorted(set(state["images"]).union(added))
     _save_state(p, state)
+    _touch_db(p, state)
 
     still_missing = _missing_images_ext_agnostic(p)
     return jsonify(added=added, still_missing=still_missing)
@@ -391,6 +407,7 @@ def commit_import():
             # print(f"normalize failed for {src}: {e}")
             continue
 
+    _touch_db(p, _load_state(p))
     return jsonify(ok=True, normalized=normalized)
 
 
@@ -514,6 +531,7 @@ def mets_select():
         "chosen": {"image": chosen_img, "pagexml": chosen_page},
     }
     _save_state(p, state)
+    _touch_db(p, state)
 
     missing_images = _missing_images_ext_agnostic(p)
     missing_pagexml = _missing_pagexml(p)

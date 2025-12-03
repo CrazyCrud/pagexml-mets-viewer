@@ -1,10 +1,13 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
+from lxml import etree
 from flask import Blueprint, request, jsonify, send_file, abort
 from collections import Counter
 from core.resolve import resolve_image_for_page
 from core.page import parse_pcgts, page_coords, collect_regions, collect_lines
+from ocrd_models.ocrd_page import TextEquivType
+from core.db import record_workspace
 
 
 WORKSPACES_ROOT = Path("data/workspaces").resolve()
@@ -333,3 +336,139 @@ def get_page_image():
         abort(404, f"Image not found: {img_path}")
 
     return send_file(str(Path(img_path).resolve()), conditional=True)
+
+
+def _serialize_pcgts(pcgts) -> str:
+    """Serialize PcGtsType to a unicode string, tolerant across versions."""
+    for candidate in (
+            lambda: pcgts.to_xml(),
+            lambda: pcgts.toXml(),
+    ):
+        try:
+            out = candidate()
+            if isinstance(out, bytes):
+                return out.decode("utf-8")
+            if isinstance(out, str):
+                return out
+        except Exception:
+            continue
+    try:
+        elt = pcgts.toEtree() if hasattr(pcgts, "toEtree") else None
+        if elt is not None:
+            return etree.tostring(elt, encoding="unicode")
+    except Exception:
+        pass
+    return str(pcgts)
+
+
+def _apply_line_texts(pcgts, updates: Dict[str, str]) -> int:
+    """
+    Update TextLine TextEquiv/Unicode for matching ids.
+    Returns number of lines touched.
+    """
+    updated = 0
+    get_Page = getattr(pcgts, "get_Page", None)
+    page = get_Page() if callable(get_Page) else getattr(pcgts, "Page", None)
+    if page is None:
+        return updated
+
+    regions = getattr(page, "get_TextRegion", lambda: [])() or []
+    for reg in regions:
+        lines = getattr(reg, "get_TextLine", lambda: [])() or []
+        if not lines:
+            lines = getattr(reg, "TextLine", []) or []
+        for ln in lines:
+            try:
+                lid = ln.get_id()
+            except Exception:
+                lid = getattr(ln, "id", "") or ""
+            if lid not in updates:
+                continue
+            text_val = updates.get(lid, "")
+            if _set_line_text(ln, text_val):
+                updated += 1
+    return updated
+
+
+def _set_line_text(line_obj, value: str) -> bool:
+    """
+    Set (or create) TextEquiv/Unicode for a TextLine. Returns True if changed/added.
+    """
+    current = None
+    try:
+        te_list = getattr(line_obj, "get_TextEquiv", lambda: [])() or []
+    except Exception:
+        te_list = []
+
+    if te_list:
+        te = te_list[0]
+        try:
+            current = te.get_Unicode() if hasattr(te, "get_Unicode") else getattr(te, "Unicode", None)
+        except Exception:
+            current = None
+        try:
+            if hasattr(te, "set_Unicode") and callable(te.set_Unicode):
+                te.set_Unicode(value)
+            elif hasattr(te, "Unicode"):
+                te.Unicode = value
+        except Exception:
+            return False
+        return (current or "") != value
+
+    try:
+        te = TextEquivType(Unicode=value)
+        if hasattr(line_obj, "add_TextEquiv") and callable(line_obj.add_TextEquiv):
+            line_obj.add_TextEquiv(te)
+        elif hasattr(line_obj, "TextEquiv"):
+            line_obj.TextEquiv = [te]
+        else:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+@bp_page.post("/page/transcription")
+def save_transcription():
+    """
+    Persist user-provided TextLine text back into the PAGE-XML file.
+    Accepts JSON: {workspace_id, path, lines:[{id, text}]}
+    """
+    payload = request.get_json(silent=True) or {}
+    ws_id = (payload.get("workspace_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    lines = payload.get("lines") or []
+
+    if not ws_id or not rel:
+        abort(400, "workspace_id and path are required")
+
+    base = (WORKSPACES_ROOT / ws_id).resolve()
+    if not base.is_dir():
+        abort(404, f"Workspace not found: {base}")
+
+    candidates = [
+        (base / "normalized" / rel).resolve(),
+        (base / "pages" / rel).resolve(),
+        (base / rel).resolve(),
+    ]
+    page_xml = next((p for p in candidates if p.is_file()), None)
+    if not page_xml:
+        abort(404, f"PAGE-XML not found: {rel}")
+
+    updates: Dict[str, str] = {}
+    for ln in lines:
+        lid = str(ln.get("id", "")).strip()
+        if not lid:
+            continue
+        updates[lid] = str(ln.get("text", "") or "")
+
+    pcgts = parse_pcgts(str(page_xml))
+    touched = _apply_line_texts(pcgts, updates)
+
+    # Write back
+    xml_out = _serialize_pcgts(pcgts)
+    page_xml.write_text(xml_out, encoding="utf-8")
+
+    record_workspace(ws_id)
+
+    return jsonify({"ok": True, "updated": touched, "path": str(page_xml)})

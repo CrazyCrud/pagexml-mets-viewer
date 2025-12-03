@@ -4,6 +4,7 @@ from api.page import bp_page
 from api.mets import bp_mets
 from api.upload import bp_import
 from api.file import bp_file
+from api.workspace import bp_workspace
 
 
 def create_app():
@@ -19,6 +20,7 @@ def create_app():
     app.register_blueprint(bp_mets, url_prefix="/api")
     app.register_blueprint(bp_import, url_prefix="/api")
     app.register_blueprint(bp_file, url_prefix="/api")
+    app.register_blueprint(bp_workspace, url_prefix="/api")
 
     @app.get("/")
     def index():

@@ -8,10 +8,37 @@
 
 <section class="section pt-2">
   <div class="container">
-    <h1 class="title">PAGE-XML & METS Viewer</h1>
+    <h1 class="title">PAGE-XML &amp; METS Viewer</h1>
     <p class="subtitle">
       Either upload PAGE-XML files and images directly, or upload a METS and check what's needed.
     </p>
+
+    <div class="box" id="workspaceListBox">
+      <div class="level">
+        <div class="level-left">
+          <h2 class="title is-5 mb-0">Existing workspaces</h2>
+        </div>
+        <div class="level-right">
+          <button id="btnRefreshWs" class="button is-small is-light">Refresh list</button>
+        </div>
+      </div>
+      <p class="help mb-2">Load, delete or download PAGE-XML from previous uploads.</p>
+      <div class="table-container">
+        <table class="table is-fullwidth is-striped is-hoverable">
+          <thead>
+          <tr>
+            <th>Label</th>
+            <th>Pages</th>
+            <th>Updated</th>
+            <th style="width:200px;">Actions</th>
+          </tr>
+          </thead>
+          <tbody id="workspaceTableBody">
+          <tr><td colspan="4"><em>No workspaces yet</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
     <div id="wsBox" class="box" style="display:none;">
       <p class="mb-2">
@@ -20,9 +47,10 @@
       </p>
       <div class="buttons">
         <button id="btnCommit" class="button is-success" disabled>Commit</button>
+        <button id="btnDownloadWorkspace" class="button is-info is-light" disabled>Download PAGE-XML zip</button>
         <button id="btnReset" class="button is-light">Start Over</button>
       </div>
-      <p id="commitNotice" class="help is-success" style="display:none;">Committed ✓</p>
+      <p id="commitNotice" class="help is-success" style="display:none;">Committed.</p>
     </div>
 
     <div class="box">
@@ -32,8 +60,8 @@
           <label class="file-label">
             <input id="metsInput" class="file-input" type="file" name="file" accept=".xml">
             <span class="file-cta">
-              <span class="file-icon">📦</span>
-              <span class="file-label">Choose METS (mets.xml)…</span>
+              <span class="icon"><i class="fas fa-file-alt"></i></span>
+              <span class="file-label">Choose METS (mets.xml)</span>
             </span>
             <span id="metsInputName" class="file-name">No file selected</span>
           </label>
@@ -43,19 +71,19 @@
         </div>
       </form>
 
-        <div id="fileGrpBox" class="mt-4" style="display:none;">
-          <p class="mb-2"><strong>Detected file groups</strong></p>
-          <div class="columns is-variable is-2">
-            <div class="column">
-              <label class="label">Image group</label>
-              <div id="imgGrpList" class="select is-fullwidth"><select id="selImgGrp"></select></div>
-            </div>
-            <div class="column">
-              <label class="label">PAGE-XML group</label>
-              <div id="pageGrpList" class="select is-fullwidth"><select id="selPageGrp"></select></div>
-            </div>
+      <div id="fileGrpBox" class="mt-4" style="display:none;">
+        <p class="mb-2"><strong>Detected file groups</strong></p>
+        <div class="columns is-variable is-2">
+          <div class="column">
+            <label class="label">Image group</label>
+            <div id="imgGrpList" class="select is-fullwidth"><select id="selImgGrp"></select></div>
+          </div>
+          <div class="column">
+            <label class="label">PAGE-XML group</label>
+            <div id="pageGrpList" class="select is-fullwidth"><select id="selPageGrp"></select></div>
           </div>
         </div>
+      </div>
 
       <p id="metsUploadMsg" class="help mt-2"></p>
     </div>
@@ -67,8 +95,8 @@
           <label class="file-label">
             <input id="pagesInput" class="file-input" type="file" name="files[]" multiple accept=".xml">
             <span class="file-cta">
-              <span class="file-icon">📄</span>
-              <span class="file-label">Choose PAGE-XML files …</span>
+              <span class="icon"><i class="fas fa-copy"></i></span>
+              <span class="file-label">Choose PAGE-XML files</span>
             </span>
             <span id="pagesInputName" class="file-name">No files selected</span>
           </label>
@@ -97,8 +125,8 @@
             <input id="imagesInput" class="file-input" type="file" name="files[]" multiple
                    accept=".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp,.gif,.jp2">
             <span class="file-cta">
-              <span class="file-icon">🖼</span>
-              <span class="file-label">Choose images …</span>
+              <span class="icon"><i class="fas fa-images"></i></span>
+              <span class="file-label">Choose images</span>
             </span>
             <span id="imagesInputName" class="file-name">No files selected</span>
           </label>
@@ -134,8 +162,8 @@
 
       <div class="buttons mb-2">
         <button id="btnFit" class="button is-small">Fit</button>
-        <button id="btnZoomIn" class="button is-small">＋</button>
-        <button id="btnZoomOut" class="button is-small">－</button>
+        <button id="btnZoomIn" class="button is-small">+</button>
+        <button id="btnZoomOut" class="button is-small">-</button>
       </div>
 
       <div id="osd"
@@ -149,12 +177,25 @@
           <label class="checkbox"><input type="checkbox" id="cbLines" checked> Show lines</label>
         </div>
       </div>
-        <div id="legend" class="legend">
-          <span class="chip" style="background:#0080ff22;border:1px solid #0080ff">Text</span>
-          <span class="chip" style="background:#ffa50022;border:1px solid #ffa500">Table</span>
-          <span class="chip" style="background:#7c4dff22;border:1px solid #7c4dff">Image</span>
-          <!-- … -->
+      <div id="legend" class="legend">
+        <span class="chip" style="background:#0080ff22;border:1px solid #0080ff">Text</span>
+        <span class="chip" style="background:#ffa50022;border:1px solid #ffa500">Table</span>
+        <span class="chip" style="background:#7c4dff22;border:1px solid #7c4dff">Image</span>
+      </div>
+
+      <div class="box mt-4" id="transcriptionBox" style="display:none;">
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-2">
+          <div>
+            <h3 class="title is-6 mb-1">Text line transcription</h3>
+            <p class="help mb-0">Enter text for each TextLine and save it back to the PAGE-XML.</p>
+          </div>
+          <div class="buttons">
+            <button id="btnSaveTranscription" class="button is-primary">Save transcription</button>
+          </div>
         </div>
+        <div id="lineEditor" class="line-editor"></div>
+        <p id="transcriptionStatus" class="help mt-2"></p>
+      </div>
     </div>
 
   </div>
