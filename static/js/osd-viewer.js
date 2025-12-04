@@ -260,8 +260,9 @@ class OSDViewer {
       if (line) {
         ev.preventDefault();
         ev.stopPropagation();
+        const payload = this._buildClickPayload(line, this._webPointFromDomEvent(ev));
         console.debug('[OSDViewer] line click', lid, line);
-        this._lineClickHandler(line);
+        this._lineClickHandler(payload);
       } else {
         console.debug('[OSDViewer] click with no matching line id', lid);
       }
@@ -287,10 +288,33 @@ class OSDViewer {
         ev.originalEvent.preventDefault();
         ev.originalEvent.stopPropagation();
       }
+      const payload = this._buildClickPayload(hit, ev.position);
       console.debug('[OSDViewer] canvas line click', hit.id);
-      this._lineClickHandler(hit);
+      this._lineClickHandler(payload);
     });
     console.debug('[OSDViewer] canvas click handler bound');
+  }
+
+  _webPointFromDomEvent(ev) {
+    if (!ev || !this.viewer || !this.viewer.container) return null;
+    const rect = this.viewer.container.getBoundingClientRect();
+    return new OpenSeadragon.Point(ev.clientX - rect.left, ev.clientY - rect.top);
+  }
+
+  _buildClickPayload(line, webPoint) {
+    if (!webPoint || !this.viewer || !this.viewer.viewport) {
+      return { line, click: null };
+    }
+    const viewportPt = this.viewer.viewport.pointFromPixel(webPoint);
+    const imgPt = this.viewer.viewport.viewportToImageCoordinates(viewportPt);
+    return {
+      line,
+      click: {
+        pixel: { x: webPoint.x, y: webPoint.y },
+        viewport: { x: viewportPt.x, y: viewportPt.y },
+        image: { x: imgPt.x, y: imgPt.y }
+      }
+    };
   }
 
   _hitTestLine(pt) {

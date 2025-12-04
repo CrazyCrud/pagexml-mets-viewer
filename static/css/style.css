@@ -50,6 +50,16 @@
   pointer-events: auto;
 }
 
+.line-popover {
+  position: fixed;
+  max-width: 360px;
+  width: 320px;
+  z-index: 30;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+  border: 1px solid #dbdbdb;
+  padding: 0.75rem 0.85rem;
+}
+
 #pageList li.active > a,
 #pageList li.active {
   background: #eef6ff;

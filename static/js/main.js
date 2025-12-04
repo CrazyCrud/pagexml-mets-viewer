@@ -418,30 +418,49 @@ $(function () {
   fetchWorkspaceList();
 
   // --- Line modal helpers ---
-  function showLineModal(line) {
+  function placePopover(click) {
+    const $pop = $('#linePopover');
+    const osdRect = document.getElementById('osd').getBoundingClientRect();
+    const width = $pop.outerWidth() || 320;
+    const height = $pop.outerHeight() || 180;
+    const padding = 12;
+    const px = click && click.pixel ? click.pixel.x : osdRect.width / 2;
+    const py = click && click.pixel ? click.pixel.y : osdRect.height / 2;
+    let left = osdRect.left + px - width / 2;
+    let top = osdRect.top + py + 10;
+    // clamp inside viewer
+    left = Math.min(Math.max(left, osdRect.left + padding), osdRect.right - width - padding);
+    if (top + height + padding > osdRect.bottom) {
+      top = osdRect.bottom - height - padding;
+    }
+    $pop.css({ left: `${left}px`, top: `${top}px` });
+  }
+
+  function showLineModal(line, click) {
     lineModalState = { lineId: line.id };
-    $('#lineModalTitle').text(`Edit TextLine ${line.id || ''}`.trim());
-    $('#lineModalLabel').text(line.region_id ? `Region: ${line.region_id}` : 'TextLine');
-    $('#lineModalInput').val(line.text || '');
-    $('#lineModalStatus').text('').removeClass('is-danger is-success');
-    $('#lineModal').addClass('is-active');
-    console.debug('[main] showLineModal', line);
-    setTimeout(() => $('#lineModalInput').trigger('focus'), 50);
+    $('#linePopoverTitle').text(`TextLine ${line.id || ''}`.trim());
+    $('#linePopoverLabel').text(line.region_id ? `Region: ${line.region_id}` : 'TextLine');
+    $('#linePopoverInput').val(line.text || '');
+    $('#linePopoverStatus').text('').removeClass('is-danger is-success');
+    $('#linePopover').show();
+    placePopover(click);
+    console.debug('[main] showLinePopover', line, click);
+    setTimeout(() => $('#linePopoverInput').trigger('focus'), 30);
   }
 
   function hideLineModal() {
-    $('#lineModal').removeClass('is-active');
+    $('#linePopover').hide();
     lineModalState = { lineId: null };
   }
 
-  $('#lineModalClose, #lineModalCancel').on('click', hideLineModal);
+  $('#linePopoverClose, #linePopoverCancel').on('click', hideLineModal);
 
-  $('#lineModalSave').on('click', function () {
+  $('#linePopoverSave').on('click', function () {
     if (!workspaceId || !currentPage || !lineModalState.lineId) {
-      $('#lineModalStatus').text('Open a PAGE and select a line first.').addClass('is-danger');
+      $('#linePopoverStatus').text('Open a PAGE and select a line first.').addClass('is-danger');
       return;
     }
-    const newText = $('#lineModalInput').val();
+    const newText = $('#linePopoverInput').val();
     const payload = {
       workspace_id: workspaceId,
       path: currentPage,
@@ -453,7 +472,7 @@ $(function () {
       contentType: 'application/json',
       data: JSON.stringify(payload)
     }).done(function (resp) {
-      $('#lineModalStatus').text(`Saved line ${lineModalState.lineId}.`).removeClass('is-danger').addClass('is-success');
+      $('#linePopoverStatus').text(`Saved line ${lineModalState.lineId}.`).removeClass('is-danger').addClass('is-success');
       // Update local cache
       currentLines = currentLines.map(l => l.id === lineModalState.lineId ? { ...l, text: newText } : l);
       renderTranscriptions();
@@ -461,14 +480,15 @@ $(function () {
       fetchWorkspaceList();
       setTimeout(hideLineModal, 400);
     }).fail(function (xhr) {
-      $('#lineModalStatus').text(`Failed to save: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
+      $('#linePopoverStatus').text(`Failed to save: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
     });
   });
 
   // Bridge line clicks from OSD overlays to modal
-  viewer.onLineClick((line) => {
-    if (!line) return;
+  viewer.onLineClick((payload) => {
+    if (!payload) return;
+    const line = payload.line || payload;
     console.debug('[main] viewer.onLineClick', line);
-    showLineModal(line);
+    showLineModal(line, payload.click || null);
   });
 });
