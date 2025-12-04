@@ -201,4 +201,28 @@
   </div>
 </section>
 
+<!-- Line edit modal -->
+<div class="modal" id="lineModal">
+  <div class="modal-background"></div>
+  <div class="modal-card">
+    <header class="modal-card-head">
+      <p class="modal-card-title" id="lineModalTitle">Edit line</p>
+      <button class="delete" aria-label="close" id="lineModalClose"></button>
+    </header>
+    <section class="modal-card-body">
+      <div class="field">
+        <label class="label" id="lineModalLabel">TextLine</label>
+        <div class="control">
+          <textarea class="textarea" rows="3" id="lineModalInput"></textarea>
+        </div>
+      </div>
+      <p class="help" id="lineModalStatus"></p>
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button is-success" id="lineModalSave">Save</button>
+      <button class="button" id="lineModalCancel">Cancel</button>
+    </footer>
+  </div>
+</div>
+
 {% endblock %}

@@ -11,6 +11,9 @@ class OSDViewer {
     this._mountedEl = null;
 
     this._textRegionColors = new Map();
+    this._lineClickHandler = null;
+    this._canvasClickBound = false;
+    this._lines = [];
   }
 
   _hueFromId(id) {
@@ -56,10 +59,14 @@ class OSDViewer {
       this._anchorSvgToImage();
       // re-apply visibility in case user toggled before/during open
       this._applyToggleVisibility();
+      console.debug('[OSDViewer] open -> overlay anchored');
     });
 
     // Re-anchor overlay on size changes
     this.viewer.addHandler('resize', () => this._anchorSvgToImage());
+
+    // Bind click detection once after viewer exists
+    this._bindCanvasClick();
   }
 
     // put this near the top of osd-viewer.js (or above setOverlays)
@@ -97,7 +104,9 @@ class OSDViewer {
   }
 
   setOverlays(regions = [], lines = []) {
+    this._lines = Array.isArray(lines) ? lines : [];
     this._ensureSvg(true); // true -> clear groups
+    console.debug('[OSDViewer] setOverlays', { regions: regions?.length || 0, lines: this._lines.length });
     // Regions
     if (regions && regions.length) {
       for (const r of regions) {
@@ -137,11 +146,13 @@ class OSDViewer {
           const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
           poly.setAttribute('class', 'line');
           poly.setAttribute('points', l.points.map(([x,y]) => `${x},${y}`).join(' '));
-          poly.setAttribute('fill', '#00c800');
-          poly.setAttribute('fill-opacity', '0.15');
-          poly.setAttribute('stroke', '#00c800');
-          poly.setAttribute('stroke-opacity', '0.9');
-          poly.setAttribute('stroke-width', '1');
+        poly.setAttribute('fill', '#00c800');
+        poly.setAttribute('fill-opacity', '0.15');
+        poly.setAttribute('stroke', '#00c800');
+        poly.setAttribute('stroke-opacity', '0.9');
+        poly.setAttribute('stroke-width', '1');
+        if (l.id) poly.dataset.lineId = l.id;
+        poly.style.pointerEvents = 'visiblePainted';
 
           if (l.text && l.text.trim().length > 0) {
               const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
@@ -156,9 +167,11 @@ class OSDViewer {
             pl.setAttribute('class', 'base');
             pl.setAttribute('points', l.baseline.map(([x,y]) => `${x},${y}`).join(' '));
             pl.setAttribute('fill', 'none');
-            pl.setAttribute('stroke', '#ff5050');
-            pl.setAttribute('stroke-opacity', '0.9');
-            pl.setAttribute('stroke-width', '1.5');
+          pl.setAttribute('stroke', '#ff5050');
+          pl.setAttribute('stroke-opacity', '0.9');
+          pl.setAttribute('stroke-width', '1.5');
+          if (l.id) pl.dataset.lineId = l.id;
+          pl.style.pointerEvents = 'visiblePainted';
 
             if (l.text && l.text.trim().length > 0) {
               const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
@@ -172,6 +185,7 @@ class OSDViewer {
     }
     // Ensure current toggles are respected immediately
     this._applyToggleVisibility();
+    this._ensureLineDelegation();
   }
 
   fit() {
@@ -188,6 +202,8 @@ class OSDViewer {
       this.svg.style.position = 'absolute';
       this.svg.style.left = 0;
       this.svg.style.top = 0;
+      this.svg.style.zIndex = '5';
+      this.svg.style.pointerEvents = 'auto';
       // Create group containers once
       this.gRegions = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       this.gRegions.setAttribute('data-layer', 'regions');
@@ -195,6 +211,7 @@ class OSDViewer {
       this.gLines.setAttribute('data-layer', 'lines');
       this.svg.appendChild(this.gRegions);
       this.svg.appendChild(this.gLines);
+      this._ensureLineDelegation();
     } else if (clearGroups) {
       // Clear only the groups; keep the container & overlay attached
       while (this.gRegions.firstChild) this.gRegions.removeChild(this.gRegions.firstChild);
@@ -214,12 +231,125 @@ class OSDViewer {
       location: bounds,
       placement: OpenSeadragon.OverlayPlacement.TOP_LEFT
     });
+    console.debug('[OSDViewer] overlay re-anchored', bounds);
   }
 
   _applyToggleVisibility() {
     // Show/hide by flipping the group containers; minimal DOM churn.
     if (this.gRegions) this.gRegions.style.display = this.showRegions ? '' : 'none';
     if (this.gLines)   this.gLines.style.display   = this.showLines   ? '' : 'none';
+  }
+
+  onLineClick(handler) {
+    this._lineClickHandler = handler;
+    // if a handler is set after overlays already exist, ensure delegation is present
+    this._ensureLineDelegation();
+  }
+
+  _ensureLineDelegation() {
+    if (!this.gLines) return;
+    // remove previous listener by resetting
+    this.gLines.onclick = null;
+    if (!this._lineClickHandler) return;
+    this.gLines.style.pointerEvents = 'auto';
+    this.gLines.addEventListener('click', (ev) => {
+      const target = ev.target;
+      if (!target) return;
+      const lid = target.dataset ? target.dataset.lineId : null;
+      const line = this._lines.find(l => l.id === lid) || (lid ? { id: lid, text: '' } : null);
+      if (line) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        console.debug('[OSDViewer] line click', lid, line);
+        this._lineClickHandler(line);
+      } else {
+        console.debug('[OSDViewer] click with no matching line id', lid);
+      }
+    });
+    console.debug('[OSDViewer] line click delegation attached');
+  }
+
+  _bindCanvasClick() {
+    if (!this.viewer || this._canvasClickBound) return;
+    this._canvasClickBound = true;
+    this.viewer.addHandler('canvas-click', (ev) => {
+      // Only react to quick clicks (no drag) and when lines are visible
+      if (!ev.quick || !this._lineClickHandler || !this.showLines) return;
+      if (ev.originalEvent && ev.originalEvent.defaultPrevented) return;
+      const viewportPt = this.viewer.viewport.pointFromPixel(ev.position);
+      const imgPt = this.viewer.viewport.viewportToImageCoordinates(viewportPt);
+      const hit = this._hitTestLine(imgPt);
+      if (!hit) return;
+
+      // prevent OSD from also handling the click (zoom)
+      ev.preventDefaultAction = true;
+      if (ev.originalEvent) {
+        ev.originalEvent.preventDefault();
+        ev.originalEvent.stopPropagation();
+      }
+      console.debug('[OSDViewer] canvas line click', hit.id);
+      this._lineClickHandler(hit);
+    });
+    console.debug('[OSDViewer] canvas click handler bound');
+  }
+
+  _hitTestLine(pt) {
+    if (!pt || !this._lines || !this._lines.length) return null;
+    // Traverse in reverse so top-most (last drawn) wins
+    for (let i = this._lines.length - 1; i >= 0; i--) {
+      const line = this._lines[i];
+      if (line.points && line.points.length >= 3 && this._pointInPolygon(pt, line.points)) {
+        return line;
+      }
+      // fall back to proximity to polygon edges or baseline
+      if (line.points && line.points.length >= 2 && this._nearPolyline(pt, line.points, 5)) {
+        return line;
+      }
+      if (line.baseline && line.baseline.length >= 2 && this._nearPolyline(pt, line.baseline, 5)) {
+        return line;
+      }
+    }
+    return null;
+  }
+
+  _pointInPolygon(pt, poly) {
+    // Ray casting algorithm
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1];
+      const xj = poly[j][0], yj = poly[j][1];
+      const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
+        (pt.x < (xj - xi) * (pt.y - yi) / ((yj - yi) || 1e-9) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  _nearPolyline(pt, pts, tol = 5) {
+    const t2 = tol * tol;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = { x: pts[i][0], y: pts[i][1] };
+      const b = { x: pts[i + 1][0], y: pts[i + 1][1] };
+      if (this._distToSegmentSq(pt, a, b) <= t2) return true;
+    }
+    return false;
+  }
+
+  _distToSegmentSq(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 0 && dy === 0) {
+      const px = p.x - a.x;
+      const py = p.y - a.y;
+      return px * px + py * py;
+    }
+    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+    const clamped = Math.max(0, Math.min(1, t));
+    const projX = a.x + clamped * dx;
+    const projY = a.y + clamped * dy;
+    const qx = p.x - projX;
+    const qy = p.y - projY;
+    return qx * qx + qy * qy;
   }
 }
 

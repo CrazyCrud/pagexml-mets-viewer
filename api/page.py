@@ -5,7 +5,14 @@ from lxml import etree
 from flask import Blueprint, request, jsonify, send_file, abort
 from collections import Counter
 from core.resolve import resolve_image_for_page
-from core.page import parse_pcgts, page_coords, collect_regions, collect_lines
+from core.page import (
+    parse_pcgts,
+    page_coords,
+    collect_regions,
+    collect_lines,
+    _inject_page_namespace,
+    PAGE_NS_FALLBACK,
+)
 from ocrd_models.ocrd_page import TextEquivType
 from core.db import record_workspace
 
@@ -340,6 +347,14 @@ def get_page_image():
 
 def _serialize_pcgts(pcgts) -> str:
     """Serialize PcGtsType to a unicode string, tolerant across versions."""
+    try:
+        elt = pcgts.toEtree() if hasattr(pcgts, "toEtree") else None
+    except Exception:
+        elt = None
+    if elt is not None:
+        _ensure_page_namespace_on_root(elt)
+        return etree.tostring(elt, encoding="unicode")
+
     for candidate in (
             lambda: pcgts.to_xml(),
             lambda: pcgts.toXml(),
@@ -347,18 +362,20 @@ def _serialize_pcgts(pcgts) -> str:
         try:
             out = candidate()
             if isinstance(out, bytes):
-                return out.decode("utf-8")
+                out = out.decode("utf-8")
             if isinstance(out, str):
-                return out
+                return _inject_page_namespace(out)
         except Exception:
             continue
-    try:
-        elt = pcgts.toEtree() if hasattr(pcgts, "toEtree") else None
-        if elt is not None:
-            return etree.tostring(elt, encoding="unicode")
-    except Exception:
-        pass
-    return str(pcgts)
+    return _inject_page_namespace(str(pcgts))
+
+
+def _ensure_page_namespace_on_root(elt):
+    nsmap = elt.nsmap or {}
+    has_page_ns = any(v and "primaresearch.org/PAGE/gts/pagecontent" in v for v in nsmap.values())
+    if has_page_ns:
+        return
+    elt.set("{http://www.w3.org/2000/xmlns/}pc", PAGE_NS_FALLBACK)
 
 
 def _apply_line_texts(pcgts, updates: Dict[str, str]) -> int:

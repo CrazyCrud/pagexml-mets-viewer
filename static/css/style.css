@@ -29,12 +29,25 @@
   stroke-width: 1px;
   fill: #00c800;
   fill-opacity: 0.15;       /* subtle fill */
+  cursor: pointer;
 }
 
 #osd svg .base {
   stroke: rgba(255,80,80,0.9);
   stroke-width: 1.5px;
   fill: none;
+}
+
+.openseadragon-overlay {
+  pointer-events: none; /* default wrapper; let children opt-in */
+}
+
+.openseadragon-overlay svg {
+  pointer-events: none;
+}
+
+.openseadragon-overlay svg [data-line-id] {
+  pointer-events: auto;
 }
 
 #pageList li.active > a,
@@ -74,4 +87,8 @@
 
 .line-row .textarea {
   font-family: monospace;
+}
+
+#transcriptionBox {
+  display: none;
 }

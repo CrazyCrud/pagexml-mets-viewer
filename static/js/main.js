@@ -6,9 +6,12 @@ $(function () {
   let fileGrps = null;
   let currentPage = null;
   let currentLines = [];
+  let currentRegions = [];
+  let lineModalState = { lineId: null };
 
   const viewer = new OSDViewer();
   viewer.mount(document.getElementById('osd'));
+  console.debug('[main] viewer mounted');
 
   function setWs(id) {
     workspaceId = id;
@@ -214,34 +217,10 @@ $(function () {
     });
   }
 
-  function renderTranscriptions(lines) {
-    currentLines = lines || [];
-    const body = $('#lineEditor').empty();
-    if (!currentLines.length) {
-      body.append('<p><em>No TextLine elements found in this PAGE.</em></p>');
-      $('#transcriptionBox').show();
-      return;
-    }
-    currentLines.forEach((ln, idx) => {
-      const row = $('<div class="line-row"></div>');
-      const label = ln.id ? `${ln.id}` : `Line ${idx + 1}`;
-      row.append(`<label class="label is-small">TextLine ${label}</label>`);
-      row.append(`<textarea class="textarea line-input" rows="2" data-line-id="${ln.id || ''}">${ln.text || ''}</textarea>`);
-      body.append(row);
-    });
-    $('#transcriptionStatus').text('').removeClass('is-success is-danger');
-    $('#transcriptionBox').show();
-  }
-
-  function collectTranscriptions() {
-    const out = [];
-    $('#lineEditor').find('textarea.line-input').each(function () {
-      out.push({
-        id: $(this).data('line-id'),
-        text: $(this).val()
-      });
-    });
-    return out;
+  function renderTranscriptions() {
+    // Legacy list is hidden; editing is done via modal.
+    $('#transcriptionBox').hide();
+    $('#lineEditor').empty();
   }
 
   $('#metsInput').on('change', function () { updateFileName(this, '#metsInputName'); });
@@ -351,29 +330,6 @@ $(function () {
     window.location = `/api/workspaces/${encodeURIComponent(workspaceId)}/download`;
   });
 
-  $('#btnSaveTranscription').on('click', function () {
-    if (!workspaceId || !currentPage) {
-      $('#transcriptionStatus').text('Open a PAGE first.').removeClass('is-success').addClass('is-danger');
-      return;
-    }
-    const payload = {
-      workspace_id: workspaceId,
-      path: currentPage,
-      lines: collectTranscriptions()
-    };
-    $.ajax({
-      url: '/api/page/transcription',
-      type: 'POST',
-      contentType: 'application/json',
-      data: JSON.stringify(payload)
-    }).done(function (resp) {
-      $('#transcriptionStatus').text(`Saved ${resp.updated || payload.lines.length} line(s).`).removeClass('is-danger').addClass('is-success');
-      fetchWorkspaceList();
-    }).fail(function (xhr) {
-      $('#transcriptionStatus').text(`Failed to save: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
-    });
-  });
-
   $('#btnReset').on('click', function () {
     workspaceId = null;
     pages = [];
@@ -429,14 +385,17 @@ $(function () {
 
     $.getJSON('/api/page', { workspace_id: wsId, path: pageName })
       .done(function (data) {
+        currentRegions = data.regions || [];
+        currentLines = data.lines || [];
         viewer.setImage(data.image.url, data.image.width, data.image.height);
-        viewer.setOverlays(data.regions || [], data.lines || []);
+        viewer.setOverlays(currentRegions, currentLines);
         viewer.setToggles({
           regions: $('#cbRegions').is(':checked'),
           lines: $('#cbLines').is(':checked')
         });
         renderStats(data.stats);
-        renderTranscriptions(data.lines || []);
+        renderTranscriptions();
+        console.debug('[main] page loaded', { page: pageName, lines: currentLines.length, regions: currentRegions.length });
       })
       .fail(function (xhr) {
         alert(`Failed to load PAGE: ${xhr.responseText || xhr.status}`);
@@ -457,4 +416,59 @@ $(function () {
   $('#btnRefreshWs').on('click', fetchWorkspaceList);
 
   fetchWorkspaceList();
+
+  // --- Line modal helpers ---
+  function showLineModal(line) {
+    lineModalState = { lineId: line.id };
+    $('#lineModalTitle').text(`Edit TextLine ${line.id || ''}`.trim());
+    $('#lineModalLabel').text(line.region_id ? `Region: ${line.region_id}` : 'TextLine');
+    $('#lineModalInput').val(line.text || '');
+    $('#lineModalStatus').text('').removeClass('is-danger is-success');
+    $('#lineModal').addClass('is-active');
+    console.debug('[main] showLineModal', line);
+    setTimeout(() => $('#lineModalInput').trigger('focus'), 50);
+  }
+
+  function hideLineModal() {
+    $('#lineModal').removeClass('is-active');
+    lineModalState = { lineId: null };
+  }
+
+  $('#lineModalClose, #lineModalCancel').on('click', hideLineModal);
+
+  $('#lineModalSave').on('click', function () {
+    if (!workspaceId || !currentPage || !lineModalState.lineId) {
+      $('#lineModalStatus').text('Open a PAGE and select a line first.').addClass('is-danger');
+      return;
+    }
+    const newText = $('#lineModalInput').val();
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      lines: [{ id: lineModalState.lineId, text: newText }]
+    };
+    $.ajax({
+      url: '/api/page/transcription',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      $('#lineModalStatus').text(`Saved line ${lineModalState.lineId}.`).removeClass('is-danger').addClass('is-success');
+      // Update local cache
+      currentLines = currentLines.map(l => l.id === lineModalState.lineId ? { ...l, text: newText } : l);
+      renderTranscriptions();
+      viewer.setOverlays(currentRegions, currentLines);
+      fetchWorkspaceList();
+      setTimeout(hideLineModal, 400);
+    }).fail(function (xhr) {
+      $('#lineModalStatus').text(`Failed to save: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
+    });
+  });
+
+  // Bridge line clicks from OSD overlays to modal
+  viewer.onLineClick((line) => {
+    if (!line) return;
+    console.debug('[main] viewer.onLineClick', line);
+    showLineModal(line);
+  });
 });

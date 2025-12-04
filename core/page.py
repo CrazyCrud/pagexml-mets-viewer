@@ -9,6 +9,8 @@ from ocrd_models.ocrd_page import PcGtsType, OcrdPage
 
 from .resolve import resolve_image_for_page
 
+PAGE_NS_FALLBACK = "http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15"
+
 """
 Returns
 {
@@ -292,7 +294,23 @@ def _parse_pcgts(page_xml_path) -> PcGtsType:
     try:
         pcgts = parse_pagexml(str(p))
     except Exception as e:
-        raise ValueError(f"Failed to parse PAGE-XML '{p}': {e}") from e
+        # Some tools/files drop xmlns:pc on root; repair and retry once
+        try:
+            txt = p.read_text(encoding="utf-8")
+        except Exception:
+            txt = ""
+        if txt and "xmlns:pc" not in txt:
+            fixed = _inject_page_namespace(txt)
+            if fixed != txt:
+                p.write_text(fixed, encoding="utf-8")
+                try:
+                    pcgts = parse_pagexml(str(p))
+                except Exception as e2:
+                    raise ValueError(f"Failed to parse PAGE-XML '{p}': {e2}") from e2
+            else:
+                raise ValueError(f"Failed to parse PAGE-XML '{p}': {e}") from e
+        else:
+            raise ValueError(f"Failed to parse PAGE-XML '{p}': {e}") from e
 
     if not isinstance(pcgts, PcGtsType):
         raise ValueError(f"Parsed object is not PcGtsType (got {type(pcgts)!r}) for '{p}'")
@@ -590,3 +608,26 @@ def _apply_homography(pts: List[Tuple[float, float]], H: List[List[float]]) -> L
         yn = (h10 * x + h11 * y + h12) / w
         res.append((xn, yn))
     return res
+
+
+def _inject_page_namespace(xml_text: str) -> str:
+    """
+    If the PAGE namespace declaration is missing on the root, inject a default one.
+    This keeps corrupted files (missing xmlns:pc) parseable after a save.
+    """
+    if not xml_text or "xmlns:pc" in xml_text:
+        return xml_text
+    pattern = r"<pc:(PcGtsType|PcGts)\b"
+    if re.search(pattern, xml_text):
+        return re.sub(pattern,
+                      lambda m: f'<pc:{m.group(1)} xmlns:pc=\"{PAGE_NS_FALLBACK}\"',
+                      xml_text,
+                      count=1)
+    # fallback: inject default namespace on <PcGts> if no prefix
+    pattern2 = r"<PcGts\b"
+    if re.search(pattern2, xml_text) and "xmlns=" not in xml_text:
+        return re.sub(pattern2,
+                      lambda _: f'<PcGts xmlns=\"{PAGE_NS_FALLBACK}\"',
+                      xml_text,
+                      count=1)
+    return xml_text
