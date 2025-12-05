@@ -5,6 +5,8 @@ There are  great PageXML viewers out there:
 
 I just wanted to add another, lightweight viewer, that can read in **multiple PageXML files** as well as a OCR-D workspace (simple parsing of METS file and displaying the file groups).
 
+Moreover, it's possible to edit or add transcriptions to existing TextLine elements and export the newly edited PageXML files.
+
 ![myimage](screenshot.png?raw=true)    
 
 # Installation
