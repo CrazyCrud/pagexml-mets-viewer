@@ -518,7 +518,7 @@ $(function () {
     const px = click && click.pixel ? click.pixel.x : osdRect.width / 2;
     const py = click && click.pixel ? click.pixel.y : osdRect.height / 2;
     let left = osdRect.left + px - width / 2;
-    let top = osdRect.top + py + 10;
+    let top = osdRect.top + py + 18;
     // clamp inside viewer
     left = Math.min(Math.max(left, osdRect.left + padding), osdRect.right - width - padding);
     if (top + height + padding > osdRect.bottom) {
