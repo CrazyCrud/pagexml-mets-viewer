@@ -44,7 +44,8 @@ def _sync_dirs_into_db():
                 d.name,
                 label=state.get("label") if state else None,
                 page_count=len(state.get("pages", [])) if state else None,
-                has_mets=bool(state.get("mets")) if state else None
+                has_mets=bool(state.get("mets")) if state else None,
+                bump_updated=False
             )
 
 
@@ -67,7 +68,13 @@ def load_workspace(ws_id: str):
     missing_images = _missing_images_ext_agnostic(paths)
     missing_pagexml = _missing_pagexml(paths)
 
-    record_workspace(ws_id, label=state.get("label"), page_count=len(state.get("pages", [])), has_mets=bool(state.get("mets")))
+    record_workspace(
+        ws_id,
+        label=state.get("label"),
+        page_count=len(state.get("pages", [])),
+        has_mets=bool(state.get("mets")),
+        bump_updated=False
+    )
 
     return jsonify({
         "workspace_id": ws_id,

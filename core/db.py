@@ -47,7 +47,7 @@ def init_db():
 
 
 def record_workspace(ws_id: str, *, label: Optional[str] = None, page_count: Optional[int] = None,
-                     has_mets: Optional[bool] = None) -> None:
+                     has_mets: Optional[bool] = None, bump_updated: bool = True) -> None:
     """
     Insert or update a workspace row. Only provided fields are updated.
     """
@@ -65,6 +65,7 @@ def record_workspace(ws_id: str, *, label: Optional[str] = None, page_count: Opt
         has_mets_val = existing["has_mets"] if existing else 0
     # Use a friendly default label if none provided and row does not exist yet.
     default_label = label or (existing["label"] if existing else f"Workspace {ws_id[:8]}")
+    updated_at_val = now if bump_updated or not existing else existing["updated_at"]
     with _connect() as con:
         con.execute(
             """
@@ -72,7 +73,7 @@ def record_workspace(ws_id: str, *, label: Optional[str] = None, page_count: Opt
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               label       = COALESCE(excluded.label, workspaces.label),
-              updated_at  = excluded.updated_at,
+              updated_at  = COALESCE(excluded.updated_at, workspaces.updated_at),
               page_count  = COALESCE(excluded.page_count, workspaces.page_count),
               has_mets    = COALESCE(excluded.has_mets, workspaces.has_mets)
             """,
@@ -80,7 +81,7 @@ def record_workspace(ws_id: str, *, label: Optional[str] = None, page_count: Opt
                 ws_id,
                 default_label,
                 now,
-                now,
+                updated_at_val,
                 page_count_val,
                 has_mets_val,
             )
