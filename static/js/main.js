@@ -8,6 +8,8 @@ $(function () {
   let currentLines = [];
   let currentRegions = [];
   let lineModalState = { lineId: null };
+  let hasPendingChanges = false;
+  const sectionIds = ['workspace', 'uploads', 'files', 'viewer'];
 
   const viewer = new OSDViewer();
   viewer.mount(document.getElementById('osd'));
@@ -16,8 +18,23 @@ $(function () {
   function setWs(id) {
     workspaceId = id;
     $('#wsIdTag').text(id);
+    $('#topWsChip').text(`Workspace: ${id}`).show();
     $('#wsBox').show();
     updateDownloadButton();
+  }
+
+  function setPendingChanges(flag) {
+    hasPendingChanges = !!flag;
+    $('#commitBadge').toggle(hasPendingChanges);
+  }
+
+  function showSection(id) {
+    sectionIds.forEach(s => {
+      const visible = s === id;
+      $(`#${s}`)[visible ? 'show' : 'hide']();
+    });
+    $('.section-tab').parent().removeClass('is-active');
+    $(`.section-tab[data-target="${id}"]`).parent().addClass('is-active');
   }
 
   function updateDownloadButton() {
@@ -104,7 +121,7 @@ $(function () {
         tb.append($('<tr>').append($('<td>').append($a)));
       });
     }
-    $('#pagesBox').show();
+    $('#files').show();
   }
 
   function renderStats(stats) {
@@ -136,6 +153,7 @@ $(function () {
   function updateCommitUI(committed = false) {
     $('#btnCommit').prop('disabled', !canCommit());
     $('#commitNotice').toggle(committed);
+    $('#commitBadge').toggle(hasPendingChanges);
     updateDownloadButton();
   }
 
@@ -194,8 +212,9 @@ $(function () {
         renderPages();
         renderMissing();
         resetTranscriptionUI();
-        $('#viewerBox').hide();
+        $('#viewer').hide();
         updateCommitUI(false);
+        setPendingChanges(false);
       })
       .fail(function (xhr) {
         alert(`Failed to load workspace: ${xhr.responseText || xhr.status}`);
@@ -254,6 +273,8 @@ $(function () {
       renderPages();
       renderMissing();
       fetchWorkspaceList();
+      setPendingChanges(true);
+      showSection('uploads');
     }).fail(function (xhr) {
       $('#metsUploadMsg').text(`METS upload failed: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
     });
@@ -283,6 +304,8 @@ $(function () {
       renderPages();
       renderMissing();
       fetchWorkspaceList();
+      setPendingChanges(true);
+      showSection('files');
     }).fail(function (xhr) {
       $('#pagesUploadMsg').text(`Upload failed: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
     });
@@ -308,6 +331,8 @@ $(function () {
       $('#imagesUploadMsg').text(`Added ${resp.added.length} image(s). Still missing: ${missingImages.length}.`).removeClass('is-danger').addClass('is-success');
       renderMissing();
       fetchWorkspaceList();
+      setPendingChanges(true);
+      showSection('uploads');
     }).fail(function (xhr) {
       $('#imagesUploadMsg').text(`Upload failed: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
     });
@@ -317,6 +342,7 @@ $(function () {
     if (!canCommit()) return;
     $.post(`/api/commit-import?workspace_id=${encodeURIComponent(workspaceId)}`)
       .done(function () {
+        setPendingChanges(false);
         updateCommitUI(true);
         fetchWorkspaceList();
       })
@@ -340,10 +366,11 @@ $(function () {
 
     $('#wsBox').hide();
     $('#imagesBox').hide();
-    $('#pagesBox').hide();
-    $('#viewerBox').hide();
+    $('#files').hide();
+    $('#viewer').hide();
     $('#fileGrpBox').hide();
     $('#missingPagesWrap').hide();
+    $('#topWsChip').hide();
 
     $('#metsInput').val(''); $('#metsInputName').text('No file selected');
     $('#pagesInput').val(''); $('#pagesInputName').text('No files selected');
@@ -352,6 +379,8 @@ $(function () {
     $('#metsUploadMsg').text(''); $('#pagesUploadMsg').text(''); $('#imagesUploadMsg').text('');
     updateCommitUI(false);
     updateDownloadButton();
+    setPendingChanges(false);
+    showSection('workspace');
   });
 
   $(document).on('change', '#selImgGrp, #selPageGrp', refreshForSelection);
@@ -380,7 +409,8 @@ $(function () {
 
   function openPage(wsId, pageName) {
     $('#curPage').text(pageName);
-    $('#viewerBox').show();
+    $('#viewer').show();
+    showSection('viewer');
     currentPage = pageName;
 
     $.getJSON('/api/page', { workspace_id: wsId, path: pageName })
@@ -415,7 +445,16 @@ $(function () {
 
   $('#btnRefreshWs').on('click', fetchWorkspaceList);
 
+  $(document).on('click', '.section-tab', function (e) {
+    e.preventDefault();
+    const target = $(this).data('target');
+    if (target) {
+      showSection(target);
+    }
+  });
+
   fetchWorkspaceList();
+  showSection('workspace');
 
   // --- Line modal helpers ---
   function placePopover(click) {
