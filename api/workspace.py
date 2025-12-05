@@ -106,6 +106,8 @@ def rename_workspace(ws_id: str):
 
     payload = request.get_json(silent=True) or {}
     label = str(payload.get("label", "")).strip()
+    # collapse internal excessive whitespace
+    label = " ".join(label.split())
     if not label:
         return jsonify(error="label is required"), 400
     if len(label) > 120:
@@ -133,6 +135,12 @@ def download_workspace(ws_id: str):
     if not files:
         abort(404, description="no PAGE-XML files to download")
 
+    # Derive a nicer download name if label exists
+    state = _load_state(paths)
+    label = state.get("label") or ws_id
+    safe_label = "".join(c for c in label if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_")
+    dl_name = f"{safe_label or ws_id}_pagexml.zip"
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for f in files:
@@ -143,5 +151,5 @@ def download_workspace(ws_id: str):
         buf,
         mimetype="application/zip",
         as_attachment=True,
-        download_name=f"{ws_id}_pagexml.zip"
+        download_name=dl_name
     )

@@ -67,21 +67,9 @@ def _friendly_label(ws_id: str) -> str:
 
 def _load_state(p: Dict[str, Path]) -> Dict:
     """Load (or create) a simple state.json with minimal metadata."""
-    if p["state"].is_file():
-        try:
-            state = json.loads(p["state"].read_text(encoding="utf-8"))
-            if "label" not in state or not state.get("label"):
-                existing = get_workspace(p["id"]) if get_workspace else None
-                state["label"] = existing["label"] if existing and existing.get("label") else _friendly_label(p["id"])
-                _save_state(p, state)
-            return state
-        except Exception:
-            pass
-    existing = get_workspace(p["id"]) if get_workspace else None
-    default_label = existing["label"] if existing and existing.get("label") else _friendly_label(p["id"])
-    state = {
+    defaults = {
         "workspace_id": p["id"],
-        "label": default_label,
+        "label": None,
         "pages": [],
         "images": [],
         "mets": None,
@@ -89,6 +77,20 @@ def _load_state(p: Dict[str, Path]) -> Dict:
         "required_pagexml": [],
         "file_grps": {},
     }
+    if p["state"].is_file():
+        try:
+            raw = json.loads(p["state"].read_text(encoding="utf-8"))
+            state = {**defaults, **(raw if isinstance(raw, dict) else {})}
+            if not state.get("label"):
+                existing = get_workspace(p["id"]) if get_workspace else None
+                state["label"] = existing["label"] if existing and existing.get("label") else _friendly_label(p["id"])
+            _save_state(p, state)
+            return state
+        except Exception:
+            pass
+    existing = get_workspace(p["id"]) if get_workspace else None
+    default_label = existing["label"] if existing and existing.get("label") else _friendly_label(p["id"])
+    state = {**defaults, "label": default_label}
     _save_state(p, state)
     return state
 
