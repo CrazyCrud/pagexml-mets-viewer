@@ -7,10 +7,10 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List
 
-from flask import Blueprint, jsonify, abort, send_file
+from flask import Blueprint, jsonify, abort, send_file, request
 
 from core.db import list_workspaces, record_workspace, remove_workspace
-from api.upload import _ws_paths, _load_state, _missing_images_ext_agnostic, _missing_pagexml
+from api.upload import _ws_paths, _load_state, _missing_images_ext_agnostic, _missing_pagexml, _save_state
 
 bp_workspace = Blueprint("workspace_api", __name__)
 
@@ -42,6 +42,7 @@ def _sync_dirs_into_db():
                     state = None
             record_workspace(
                 d.name,
+                label=state.get("label") if state else None,
                 page_count=len(state.get("pages", [])) if state else None,
                 has_mets=bool(state.get("mets")) if state else None
             )
@@ -66,10 +67,11 @@ def load_workspace(ws_id: str):
     missing_images = _missing_images_ext_agnostic(paths)
     missing_pagexml = _missing_pagexml(paths)
 
-    record_workspace(ws_id, page_count=len(state.get("pages", [])), has_mets=bool(state.get("mets")))
+    record_workspace(ws_id, label=state.get("label"), page_count=len(state.get("pages", [])), has_mets=bool(state.get("mets")))
 
     return jsonify({
         "workspace_id": ws_id,
+        "label": state.get("label"),
         "state": state,
         "pages": state.get("pages", []),
         "missing_images": missing_images,
@@ -89,6 +91,32 @@ def delete_workspace(ws_id: str):
         shutil.rmtree(base, ignore_errors=True)
     remove_workspace(ws_id)
     return jsonify({"deleted": ws_id})
+
+
+@bp_workspace.post("/workspaces/<ws_id>/label")
+def rename_workspace(ws_id: str):
+    """
+    Rename a workspace (update state.json and DB).
+    JSON body: {"label": "..."}
+    """
+    ws_id = _safe_id(ws_id)
+    base = (ROOT / ws_id).resolve()
+    if not base.is_dir():
+        abort(404, description="workspace not found")
+
+    payload = request.get_json(silent=True) or {}
+    label = str(payload.get("label", "")).strip()
+    if not label:
+        return jsonify(error="label is required"), 400
+    if len(label) > 120:
+        return jsonify(error="label too long"), 400
+
+    paths = _ws_paths(ws_id)
+    state = _load_state(paths)
+    state["label"] = label
+    _save_state(paths, state)
+    record_workspace(ws_id, label=label)
+    return jsonify({"workspace_id": ws_id, "label": label})
 
 
 @bp_workspace.get("/workspaces/<ws_id>/download")

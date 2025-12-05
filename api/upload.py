@@ -4,13 +4,14 @@ from pathlib import Path
 from lxml import etree
 from typing import Dict, List, Optional
 import uuid
+import random
 import json
 import re
 
 from werkzeug.utils import secure_filename
 from ocrd_models.ocrd_page_generateds import parse as parse_pagexml
 from ocrd_models.ocrd_page import PcGtsType
-from core.db import record_workspace
+from core.db import record_workspace, get_workspace
 
 bp_import = Blueprint("import", __name__)
 
@@ -46,15 +47,41 @@ def _ws_paths(ws_id: Optional[str] = None) -> Dict[str, Path]:
     return paths
 
 
+ADJECTIVES = [
+    "brisk", "calm", "vivid", "quiet", "bold", "sunny", "gentle", "lively", "bright", "nimble",
+    "steady", "true", "kind", "swift", "solid", "fresh", "clear", "warm", "neat", "sharp"
+]
+NOUNS = [
+    "harbor", "meadow", "quill", "beacon", "canvas", "compass", "echo", "lantern", "maple", "oasis",
+    "parchment", "peak", "reef", "ridge", "river", "spruce", "stride", "vista", "willow", "workbench"
+]
+
+
+def _friendly_label(ws_id: str) -> str:
+    """Generate a readable passphrase-like label for a workspace."""
+    adj = random.choice(ADJECTIVES)
+    noun = random.choice(NOUNS)
+    suffix = ws_id[:4]
+    return f"{adj.title()} {noun.title()} ({suffix})"
+
+
 def _load_state(p: Dict[str, Path]) -> Dict:
     """Load (or create) a simple state.json with minimal metadata."""
     if p["state"].is_file():
         try:
-            return json.loads(p["state"].read_text(encoding="utf-8"))
+            state = json.loads(p["state"].read_text(encoding="utf-8"))
+            if "label" not in state or not state.get("label"):
+                existing = get_workspace(p["id"]) if get_workspace else None
+                state["label"] = existing["label"] if existing and existing.get("label") else _friendly_label(p["id"])
+                _save_state(p, state)
+            return state
         except Exception:
             pass
+    existing = get_workspace(p["id"]) if get_workspace else None
+    default_label = existing["label"] if existing and existing.get("label") else _friendly_label(p["id"])
     state = {
         "workspace_id": p["id"],
+        "label": default_label,
         "pages": [],
         "images": [],
         "mets": None,
@@ -162,6 +189,7 @@ def _touch_db(p: Dict[str, Path], state: Optional[Dict] = None):
     state = state or _load_state(p)
     record_workspace(
         p["id"],
+        label=state.get("label"),
         page_count=len(state.get("pages", [])),
         has_mets=bool(state.get("mets"))
     )
@@ -270,7 +298,7 @@ def upload_pages():
     _touch_db(p, state)
 
     missing = _missing_images_ext_agnostic(p)
-    return jsonify(workspace_id=p["id"], pages=state["pages"], missing_images=missing)
+    return jsonify(workspace_id=p["id"], label=state.get("label"), pages=state["pages"], missing_images=missing)
 
 
 @bp_import.post("/upload-mets")
@@ -307,6 +335,7 @@ def upload_mets():
 
     return jsonify(
         workspace_id=p["id"],
+        label=state.get("label"),
         pages=page_basenames,
         missing_images=missing_images,
         missing_pagexml=missing_pagexml,
@@ -343,7 +372,7 @@ def upload_images():
     _touch_db(p, state)
 
     still_missing = _missing_images_ext_agnostic(p)
-    return jsonify(added=added, still_missing=still_missing)
+    return jsonify(workspace_id=p["id"], label=state.get("label"), added=added, still_missing=still_missing)
 
 
 @bp_import.post("/commit-import")

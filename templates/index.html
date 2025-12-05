@@ -66,6 +66,15 @@
           <strong>Workspace-ID on server:</strong>
           <span id="wsIdTag" class="tag is-info"></span>
         </p>
+        <div class="field has-addons mb-3" style="max-width:420px;">
+          <div class="control is-expanded">
+            <input id="wsLabelInput" class="input" type="text" placeholder="Workspace name">
+          </div>
+          <div class="control">
+            <button id="btnRenameWs" class="button is-link">Rename</button>
+          </div>
+        </div>
+        <p id="wsLabelStatus" class="help mb-2"></p>
         <div class="buttons">
           <button id="btnCommit" class="button is-success" title="Regenerates normalized PAGE-XML with clean image paths" disabled>
             Normalize &amp; Commit

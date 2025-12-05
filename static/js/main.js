@@ -10,15 +10,18 @@ $(function () {
   let lineModalState = { lineId: null };
   let hasPendingChanges = false;
   const sectionIds = ['workspace', 'uploads', 'files', 'viewer'];
+  let workspaceLabel = null;
 
   const viewer = new OSDViewer();
   viewer.mount(document.getElementById('osd'));
   console.debug('[main] viewer mounted');
 
-  function setWs(id) {
+  function setWs(id, label = null) {
     workspaceId = id;
+    workspaceLabel = label || `Workspace ${id.slice(0, 8)}`;
     $('#wsIdTag').text(id);
-    $('#topWsChip').text(`Workspace: ${id}`).show();
+    $('#topWsChip').text(`${workspaceLabel} (${id})`).show();
+    $('#wsLabelInput').val(workspaceLabel);
     $('#wsBox').show();
     updateDownloadButton();
   }
@@ -204,7 +207,7 @@ $(function () {
   function loadWorkspace(id) {
     $.getJSON(`/api/workspaces/${encodeURIComponent(id)}`)
       .done(function (resp) {
-        setWs(resp.workspace_id);
+        setWs(resp.workspace_id, resp.label || (resp.state && resp.state.label));
         pages = resp.pages || (resp.state && resp.state.pages) || [];
         missingImages = resp.missing_images || [];
         missingPageXML = resp.missing_pagexml || [];
@@ -215,6 +218,7 @@ $(function () {
         $('#viewer').hide();
         updateCommitUI(false);
         setPendingChanges(false);
+        $('#wsLabelStatus').text('').removeClass('is-danger is-success');
       })
       .fail(function (xhr) {
         alert(`Failed to load workspace: ${xhr.responseText || xhr.status}`);
@@ -263,7 +267,7 @@ $(function () {
       processData: false,
       contentType: false
     }).done(function (resp) {
-      setWs(resp.workspace_id);
+      setWs(resp.workspace_id, resp.label);
 
       pages = resp.pages || [];
       missingImages = resp.missing_images || [];
@@ -297,7 +301,7 @@ $(function () {
       processData: false,
       contentType: false
     }).done(function (resp) {
-      setWs(resp.workspace_id);
+      setWs(resp.workspace_id, resp.label);
       pages = resp.pages && resp.pages.length ? resp.pages : pages;
       missingImages = resp.missing_images || [];
       $('#pagesUploadMsg').text(`Uploaded ${resp.pages.length} PAGE-XML file(s).`).removeClass('is-danger').addClass('is-success');
@@ -356,6 +360,30 @@ $(function () {
     window.location = `/api/workspaces/${encodeURIComponent(workspaceId)}/download`;
   });
 
+  $('#btnRenameWs').on('click', function () {
+    if (!workspaceId) return;
+    const newLabel = ($('#wsLabelInput').val() || '').trim();
+    if (!newLabel) {
+      $('#wsLabelStatus').text('Enter a workspace name.').addClass('is-danger');
+      return;
+    }
+    $('#wsLabelStatus').text('').removeClass('is-danger is-success');
+    $.ajax({
+      url: `/api/workspaces/${encodeURIComponent(workspaceId)}/label`,
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({ label: newLabel })
+    }).done(function (resp) {
+      workspaceLabel = resp.label || newLabel;
+      $('#topWsChip').text(`${workspaceLabel} (${workspaceId})`).show();
+      $('#wsLabelInput').val(workspaceLabel);
+      $('#wsLabelStatus').text('Renamed.').removeClass('is-danger').addClass('is-success');
+      fetchWorkspaceList();
+    }).fail(function (xhr) {
+      $('#wsLabelStatus').text(`Rename failed: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
+    });
+  });
+
   $('#btnReset').on('click', function () {
     workspaceId = null;
     pages = [];
@@ -371,6 +399,8 @@ $(function () {
     $('#fileGrpBox').hide();
     $('#missingPagesWrap').hide();
     $('#topWsChip').hide();
+    $('#wsLabelInput').val('');
+    $('#wsLabelStatus').text('').removeClass('is-danger is-success');
 
     $('#metsInput').val(''); $('#metsInputName').text('No file selected');
     $('#pagesInput').val(''); $('#pagesInputName').text('No files selected');
