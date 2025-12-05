@@ -100,7 +100,7 @@ def _resolve_image_for_workspace(pcgts, page_xml_path: Path, uploaded_images: Op
       - <workspace>/images/<stem>.<ext> for common extensions
     Return (path, width, height, extra_meta).
     """
-    # Standard resolver (with known images if provided)
+    # Standard resolver
     try:
         img_path, w, h = resolve_image_for_page(
             pcgts,
@@ -137,7 +137,7 @@ def _resolve_image_for_workspace(pcgts, page_xml_path: Path, uploaded_images: Op
         candidates.append((ws_images / basename).resolve())
         candidates.append((ws_pages / basename).resolve())
 
-    # Stem-based fallback
+    # Stembased fallback
     stem = page_xml_path.stem
     for ext in IMG_EXTS:
         candidates.append((ws_images / f"{stem}{ext}").resolve())
@@ -176,14 +176,14 @@ def get_page():
     or
     GET /api/page?workspace_id=UUID&path=OCR-D-SEG_0001.xml
     """
-    # Determine mode early (absolute vs workspace)
+    # Determine mode early
     xml_arg = (request.args.get("xml") or "").strip()
     ws_id = (request.args.get("workspace_id") or "").strip()
 
     page_xml = _resolve_page_path()
     pcgts = parse_pcgts(str(page_xml))
 
-    # Optional image_override (absolute only)
+    # Optional image_override (absolute)
     image_override = request.args.get("image_override", "").strip()
     if image_override:
         ip = Path(image_override)
@@ -220,10 +220,10 @@ def get_page():
             )
 
     # Build image URL:
-    # - absolute-XML mode: use the alternate streamer /api/page/image?xml=...
-    # - workspace mode: use the workspace file server /api/file?workspace_id=...&path=...
+    # absolute-XML mode: use the alternate streamer /api/page/image?xml=...
+    # workspace mode: use the workspace file server /api/file?workspace_id=...&path=...
     if xml_arg:
-        # No workspace context; stream via /api/page/image
+        # No workspace context, so stream via /api/page/image
         # Do not include image_override here; caller can pass it if they want to override
         image_url = f"/api/page/image?xml={page_xml}"
     else:
@@ -409,7 +409,7 @@ def _apply_line_texts(pcgts, updates: Dict[str, str]) -> int:
 
 def _set_line_text(line_obj, value: str) -> bool:
     """
-    Set (or create) TextEquiv/Unicode for a TextLine. Returns True if changed/added.
+    Set TextEquiv/Unicode for a TextLine. Returns True if changed/added.
     """
     current = None
     try:

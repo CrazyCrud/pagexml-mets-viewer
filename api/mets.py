@@ -21,7 +21,7 @@ def _safe_ws_path(ws_id: str, rel: str) -> Path:
 def get_mets():
     """
     GET /api/mets?workspace_id=<id>&path=<rel/to/workspace>
-    Returns fileGrps + per-page image/pagexml mapping.
+    Returns fileGrps and per-page image/pagexml mapping
     """
     ws_id = (request.args.get("workspace_id") or "").strip()
     rel = (request.args.get("path") or "").strip()

@@ -66,7 +66,7 @@ def _friendly_label(ws_id: str) -> str:
 
 
 def _load_state(p: Dict[str, Path]) -> Dict:
-    """Load (or create) a simple state.json with minimal metadata."""
+    """Load a simple state.json with minimal metadata."""
     defaults = {
         "workspace_id": p["id"],
         "label": None,
@@ -307,7 +307,7 @@ def upload_pages():
 def upload_mets():
     """
     Upload a METS file. Store under original/mets.xml and extract referenced PAGE/XML + image basenames.
-    Returns ordered page basenames and missing files (images ext-agnostic).
+    Returns ordered page basenames and missing files.
     """
     file = request.files.get("file")
     if not file:
@@ -380,7 +380,7 @@ def upload_images():
 @bp_import.post("/commit-import")
 def commit_import():
     """
-    Normalize references and write final PAGE-XML into normalized/.
+    Normalize references and write final PAGE-XML into normalized folder.
     For each PAGE-XML:
       - If Page/@imageFilename exists, rewrite to "images/<basename>".
       - If missing or extension mismatch, resolve by STEM against uploaded images and set accordingly.
@@ -398,7 +398,7 @@ def commit_import():
     except Exception:
         page_to_xml = None
 
-    # Fallback constants for direct export (adjust version if you need a different PAGE schema)
+    # Fallback constants for direct export
     PAGE_NS = "http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15"
     XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
     SCHEMA_LOC = f"{PAGE_NS} {PAGE_NS}/pagecontent.xsd"
@@ -418,7 +418,7 @@ def commit_import():
             dst = (p["norm"] / src.name)
 
             if page_to_xml:
-                # ✅ Proper namespaces and XML declaration handled for you
+                # Proper namespaces and XML declaration
                 xml_bytes = page_to_xml(pcgts, pretty_print=True)  # returns bytes
                 dst.write_bytes(xml_bytes)
             else:
@@ -434,7 +434,6 @@ def commit_import():
 
             normalized.append(dst.name)
         except Exception as e:
-            # log if you like; continue best-effort
             # print(f"normalize failed for {src}: {e}")
             continue
 
@@ -517,7 +516,7 @@ def mets_select():
                 did = d.get("ID") or ""
                 pages_ordered_suffix.append(did.rsplit("_", 1)[-1] if "_" in did else did)
 
-    # Helper: index one group's files by derived page suffix
+    # Index one group's files by derived page suffix
     def _index_by_suffix(files):
         out = {}
         for f in files:
@@ -548,11 +547,11 @@ def mets_select():
     else:
         pagexml_files = []
 
-    # Basenames to require (for the selected groups only)
+    # Basenames to require
     page_basenames = [Path(x["href"]).name for x in pagexml_files if x.get("href")]
     image_basenames = [Path(x["href"]).name for x in image_files if x.get("href")]
 
-    # IMPORTANT: replace (do NOT union) so switching groups updates names
+    # replace (NOT union) so switching groups updates names
     state = _load_state(p)
     state["required_pagexml"] = page_basenames
     state["required_images"] = image_basenames

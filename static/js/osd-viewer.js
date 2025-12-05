@@ -1,4 +1,3 @@
-// static/js/osd-viewer.js
 class OSDViewer {
   constructor() {
     this.viewer = null;
@@ -41,7 +40,7 @@ class OSDViewer {
     this._mountedEl = el;
     this.viewer = OpenSeadragon({
       element: el,
-      // use CDN or your local prefix for icons; adjust to your setup
+      // use CDN or your local prefix for icons
       prefixUrl: '/static/images/osd/',
       showNavigationControl: true,
       gestureSettingsMouse: { clickToZoom: false },
@@ -52,24 +51,23 @@ class OSDViewer {
       maxZoomLevel: 40
     });
 
-    // When a new image opens, (re)anchor SVG overlay
+    // When a new image opens, anchor SVG overlay
     this.viewer.addHandler('open', () => {
       this.item = this.viewer.world.getItemAt(0);
       this._ensureSvg();
       this._anchorSvgToImage();
-      // re-apply visibility in case user toggled before/during open
+      // r-apply visibility in case user toggled before/during open
       this._applyToggleVisibility();
       console.debug('[OSDViewer] open -> overlay anchored');
     });
 
-    // Re-anchor overlay on size changes
+    // Reanchor overlay on size changes
     this.viewer.addHandler('resize', () => this._anchorSvgToImage());
 
     // Bind click detection once after viewer exists
     this._bindCanvasClick();
   }
 
-    // put this near the top of osd-viewer.js (or above setOverlays)
     styleForRegion(type, region) {
         const t = (type || '').toLowerCase();
 
@@ -79,7 +77,7 @@ class OSDViewer {
 
         if (t === 'textregion') {
           const col = this._colorForTextRegion(region?.id || '');
-          // outline colored, optional very faint fill
+          // outline colored
           return { fill: col, stroke: col, fillOpacity: 0.08, strokeWidth: 1.4 };
         }
 
@@ -94,9 +92,9 @@ class OSDViewer {
   }
 
   setImage(url, w, h) {
-    // Single image (no pyramid). OSD still handles smooth pan/zoom.
+    // Single image. OSD still handles smooth pan/zoom
     this.viewer.open({ type: 'image', url, buildPyramid: false });
-    // Prepare overlay coordinate space now (safe even before 'open' fires)
+    // Prepare overlay coordinate space now
     this._ensureSvg();
     this.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
     this.svg.setAttribute('width',  w);
@@ -139,7 +137,7 @@ class OSDViewer {
         this.gRegions.appendChild(poly);
       }
     }
-    // Lines + baselines
+    // Lines and baselines
     if (lines && lines.length) {
       for (const l of lines) {
         if (l.points && l.points.length) {
@@ -193,8 +191,6 @@ class OSDViewer {
   }
   zoomIn()  { this.viewer.viewport.zoomBy(1.2).applyConstraints(); }
   zoomOut() { this.viewer.viewport.zoomBy(1/1.2).applyConstraints(); }
-
-  // -------- internals --------
 
   _ensureSvg(clearGroups = false) {
     if (!this.svg) {
@@ -274,7 +270,7 @@ class OSDViewer {
     if (!this.viewer || this._canvasClickBound) return;
     this._canvasClickBound = true;
     this.viewer.addHandler('canvas-click', (ev) => {
-      // Only react to quick clicks (no drag) and when lines are visible
+      // Only react to quick clicks and when lines are visible
       if (!ev.quick || !this._lineClickHandler || !this.showLines) return;
       if (ev.originalEvent && ev.originalEvent.defaultPrevented) return;
       const viewportPt = this.viewer.viewport.pointFromPixel(ev.position);
@@ -282,7 +278,7 @@ class OSDViewer {
       const hit = this._hitTestLine(imgPt);
       if (!hit) return;
 
-      // prevent OSD from also handling the click (zoom)
+      // prevent OSD from also handling the click
       ev.preventDefaultAction = true;
       if (ev.originalEvent) {
         ev.originalEvent.preventDefault();
@@ -319,7 +315,7 @@ class OSDViewer {
 
   _hitTestLine(pt) {
     if (!pt || !this._lines || !this._lines.length) return null;
-    // Traverse in reverse so top-most (last drawn) wins
+    // Traverse in reverse so topmost (last drawn) wins
     for (let i = this._lines.length - 1; i >= 0; i--) {
       const line = this._lines[i];
       if (line.points && line.points.length >= 3 && this._pointInPolygon(pt, line.points)) {
@@ -337,7 +333,6 @@ class OSDViewer {
   }
 
   _pointInPolygon(pt, poly) {
-    // Ray casting algorithm
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       const xi = poly[i][0], yi = poly[i][1];
