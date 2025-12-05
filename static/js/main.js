@@ -24,6 +24,7 @@ $(function () {
     $('#wsLabelInput').val(workspaceLabel);
     $('#wsBox').show();
     updateDownloadButton();
+    updateTabAvailability();
   }
 
   function setPendingChanges(flag) {
@@ -31,7 +32,20 @@ $(function () {
     $('#commitBadge').toggle(hasPendingChanges);
   }
 
+  function updateTabAvailability() {
+    const enabled = !!workspaceId;
+    $('.section-tab').each(function () {
+      const target = $(this).data('target');
+      const shouldDisable = !enabled && target !== 'workspace';
+      $(this).parent().toggleClass('is-disabled', shouldDisable);
+      $(this).attr('aria-disabled', shouldDisable ? 'true' : 'false');
+      $(this).attr('tabindex', shouldDisable ? '-1' : '0');
+    });
+  }
+
   function showSection(id) {
+    const $tab = $(`.section-tab[data-target="${id}"]`);
+    if ($tab.parent().hasClass('is-disabled')) return;
     sectionIds.forEach(s => {
       const visible = s === id;
       $(`#${s}`)[visible ? 'show' : 'hide']();
@@ -219,6 +233,7 @@ $(function () {
         updateCommitUI(false);
         setPendingChanges(false);
         $('#wsLabelStatus').text('').removeClass('is-danger is-success');
+        $('#wsStatus').text('').removeClass('is-danger is-success');
       })
       .fail(function (xhr) {
         alert(`Failed to load workspace: ${xhr.responseText || xhr.status}`);
@@ -234,9 +249,12 @@ $(function () {
       if (workspaceId === id) {
         $('#btnReset').click();
       }
+      $('#wsStatus').text('Workspace deleted.').removeClass('is-danger').addClass('is-success');
       fetchWorkspaceList();
     }).fail(function (xhr) {
-      alert(`Failed to delete workspace: ${xhr.responseText || xhr.status}`);
+      const msg = `Failed to delete workspace: ${xhr.responseText || xhr.status}`;
+      $('#wsStatus').text(msg).removeClass('is-success').addClass('is-danger');
+      alert(msg);
     });
   }
 
@@ -401,6 +419,7 @@ $(function () {
     $('#topWsChip').hide();
     $('#wsLabelInput').val('');
     $('#wsLabelStatus').text('').removeClass('is-danger is-success');
+    $('#wsStatus').text('').removeClass('is-danger is-success');
 
     $('#metsInput').val(''); $('#metsInputName').text('No file selected');
     $('#pagesInput').val(''); $('#pagesInputName').text('No files selected');
@@ -411,6 +430,7 @@ $(function () {
     updateDownloadButton();
     setPendingChanges(false);
     showSection('workspace');
+    updateTabAvailability();
   });
 
   $(document).on('change', '#selImgGrp, #selPageGrp', refreshForSelection);
@@ -477,6 +497,7 @@ $(function () {
 
   $(document).on('click', '.section-tab', function (e) {
     e.preventDefault();
+    if ($(this).parent().hasClass('is-disabled')) return;
     const target = $(this).data('target');
     if (target) {
       showSection(target);
@@ -485,6 +506,7 @@ $(function () {
 
   fetchWorkspaceList();
   showSection('workspace');
+  updateTabAvailability();
 
   // --- Line modal helpers ---
   function placePopover(click) {
@@ -547,6 +569,7 @@ $(function () {
       renderTranscriptions();
       viewer.setOverlays(currentRegions, currentLines);
       fetchWorkspaceList();
+      setPendingChanges(true);
       setTimeout(hideLineModal, 400);
     }).fail(function (xhr) {
       $('#linePopoverStatus').text(`Failed to save: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');

@@ -22,9 +22,9 @@
         <div class="tabs is-toggle is-small">
           <ul>
             <li class="is-active"><a class="section-tab" data-target="workspace">Workspaces</a></li>
-            <li><a class="section-tab" data-target="uploads">Uploads</a></li>
-            <li><a class="section-tab" data-target="files">Files</a></li>
-            <li><a class="section-tab" data-target="viewer">Viewer</a></li>
+            <li class="is-disabled"><a class="section-tab" data-target="uploads" aria-disabled="true" tabindex="-1">Uploads</a></li>
+            <li class="is-disabled"><a class="section-tab" data-target="files" aria-disabled="true" tabindex="-1">Files</a></li>
+            <li class="is-disabled"><a class="section-tab" data-target="viewer" aria-disabled="true" tabindex="-1">Viewer</a></li>
           </ul>
         </div>
       </div>
@@ -54,6 +54,7 @@
             </tbody>
           </table>
         </div>
+        <p id="wsStatus" class="help mt-2"></p>
       </div>
     </div>
 
