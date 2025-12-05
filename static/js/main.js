@@ -508,6 +508,18 @@ $(function () {
   showSection('workspace');
   updateTabAvailability();
 
+  // Accordion behavior
+  $(document).on('click', '.accordion-trigger', function () {
+    const expanded = $(this).attr('aria-expanded') === 'true';
+    $(this).attr('aria-expanded', expanded ? 'false' : 'true');
+    const panel = $(this).next('.accordion-panel');
+    if (expanded) {
+      panel.slideUp(150);
+    } else {
+      panel.slideDown(150);
+    }
+  });
+
   // --- Line modal helpers ---
   function placePopover(click) {
     const $pop = $('#linePopover');

@@ -94,89 +94,97 @@
         <p class="card-header-title">Uploads</p>
       </header>
       <div class="card-content">
-        <h2 class="title is-6">0. (Optional) Upload METS</h2>
-        <form id="formMETS" enctype="multipart/form-data">
-          <div class="file has-name is-fullwidth">
-            <label class="file-label">
-              <input id="metsInput" class="file-input" type="file" name="file" accept=".xml">
-              <span class="file-cta">
-                <span class="icon"><i class="fas fa-file-alt"></i></span>
-                <span class="file-label">Choose METS (mets.xml)</span>
-              </span>
-              <span id="metsInputName" class="file-name">No file selected</span>
-            </label>
-          </div>
-          <div class="mt-3">
-            <button class="button is-dark" type="submit">Upload METS</button>
-          </div>
-        </form>
+        <div class="accordion">
+          <div class="accordion-item">
+            <button class="accordion-trigger" type="button" aria-expanded="false">0. (Optional) Upload METS</button>
+            <div class="accordion-panel">
+              <form id="formMETS" enctype="multipart/form-data">
+                <div class="file has-name is-fullwidth">
+                  <label class="file-label">
+                    <input id="metsInput" class="file-input" type="file" name="file" accept=".xml">
+                    <span class="file-cta">
+                      <span class="icon"><i class="fas fa-file-alt"></i></span>
+                      <span class="file-label">Choose METS (mets.xml)</span>
+                    </span>
+                    <span id="metsInputName" class="file-name">No file selected</span>
+                  </label>
+                </div>
+                <div class="mt-3">
+                  <button class="button is-dark" type="submit">Upload METS</button>
+                </div>
+              </form>
 
-        <div id="fileGrpBox" class="mt-4" style="display:none;">
-          <p class="mb-2"><strong>Detected file groups</strong></p>
-          <div class="columns is-variable is-2">
-            <div class="column">
-              <label class="label">Image group</label>
-              <div id="imgGrpList" class="select is-fullwidth"><select id="selImgGrp"></select></div>
+              <div id="fileGrpBox" class="mt-4" style="display:none;">
+                <p class="mb-2"><strong>Detected file groups</strong></p>
+                <div class="columns is-variable is-2">
+                  <div class="column">
+                    <label class="label">Image group</label>
+                    <div id="imgGrpList" class="select is-fullwidth"><select id="selImgGrp"></select></div>
+                  </div>
+                  <div class="column">
+                    <label class="label">PAGE-XML group</label>
+                    <div id="pageGrpList" class="select is-fullwidth"><select id="selPageGrp"></select></div>
+                  </div>
+                </div>
+              </div>
+
+              <p id="metsUploadMsg" class="help mt-2"></p>
             </div>
-            <div class="column">
-              <label class="label">PAGE-XML group</label>
-              <div id="pageGrpList" class="select is-fullwidth"><select id="selPageGrp"></select></div>
+          </div>
+
+          <div class="accordion-item">
+            <button class="accordion-trigger" type="button" aria-expanded="false">1. Upload PAGE-XML files</button>
+            <div class="accordion-panel">
+              <form id="formPages" enctype="multipart/form-data">
+                <div class="file has-name is-fullwidth">
+                  <label class="file-label">
+                    <input id="pagesInput" class="file-input" type="file" name="files[]" multiple accept=".xml">
+                    <span class="file-cta">
+                      <span class="icon"><i class="fas fa-copy"></i></span>
+                      <span class="file-label">Choose PAGE-XML files</span>
+                    </span>
+                    <span id="pagesInputName" class="file-name">No files selected</span>
+                  </label>
+                </div>
+                <div class="mt-3">
+                  <button class="button is-link" type="submit">Upload PAGE-XML</button>
+                </div>
+              </form>
+              <p id="pagesUploadMsg" class="help mt-2"></p>
+
+              <div id="missingPagesWrap" class="content mt-3" style="display:none;">
+                <p><strong>Missing PAGE-XML (from METS):</strong></p>
+                <ul id="missingPagesList"></ul>
+              </div>
             </div>
           </div>
-        </div>
 
-        <p id="metsUploadMsg" class="help mt-2"></p>
-
-        <hr>
-
-        <h2 class="title is-6">1. Upload PAGE-XML files</h2>
-        <form id="formPages" enctype="multipart/form-data">
-          <div class="file has-name is-fullwidth">
-            <label class="file-label">
-              <input id="pagesInput" class="file-input" type="file" name="files[]" multiple accept=".xml">
-              <span class="file-cta">
-                <span class="icon"><i class="fas fa-copy"></i></span>
-                <span class="file-label">Choose PAGE-XML files</span>
-              </span>
-              <span id="pagesInputName" class="file-name">No files selected</span>
-            </label>
-          </div>
-          <div class="mt-3">
-            <button class="button is-link" type="submit">Upload PAGE-XML</button>
-          </div>
-        </form>
-        <p id="pagesUploadMsg" class="help mt-2"></p>
-
-        <div id="missingPagesWrap" class="content mt-3" style="display:none;">
-          <p><strong>Missing PAGE-XML (from METS):</strong></p>
-          <ul id="missingPagesList"></ul>
-        </div>
-
-        <hr>
-
-        <div id="imagesBox" style="display:none;">
-          <h2 class="title is-6">2. Upload images</h2>
-          <div id="missingWrap" class="content">
-            <p><strong>Missing images:</strong></p>
-            <ul id="missingList"></ul>
-          </div>
-          <form id="formImages" class="mt-3" enctype="multipart/form-data">
-            <div class="file has-name is-fullwidth">
-              <label class="file-label">
-                <input id="imagesInput" class="file-input" type="file" name="files[]" multiple
-                       accept=".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp,.gif,.jp2">
-                <span class="file-cta">
-                  <span class="icon"><i class="fas fa-images"></i></span>
-                  <span class="file-label">Choose images</span>
-                </span>
-                <span id="imagesInputName" class="file-name">No files selected</span>
-              </label>
+          <div class="accordion-item" id="imagesBox" style="display:none;">
+            <button class="accordion-trigger" type="button" aria-expanded="false">2. Upload images</button>
+            <div class="accordion-panel">
+              <div id="missingWrap" class="content">
+                <p><strong>Missing images:</strong></p>
+                <ul id="missingList"></ul>
+              </div>
+              <form id="formImages" class="mt-3" enctype="multipart/form-data">
+                <div class="file has-name is-fullwidth">
+                  <label class="file-label">
+                    <input id="imagesInput" class="file-input" type="file" name="files[]" multiple
+                           accept=".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp,.gif,.jp2">
+                    <span class="file-cta">
+                      <span class="icon"><i class="fas fa-images"></i></span>
+                      <span class="file-label">Choose images</span>
+                    </span>
+                    <span id="imagesInputName" class="file-name">No files selected</span>
+                  </label>
+                </div>
+                <div class="mt-3">
+                  <button class="button is-primary" type="submit">Upload images</button>
+                </div>
+              </form>
+              <p id="imagesUploadMsg" class="help mt-2"></p>
             </div>
-            <div class="mt-3">
-              <button class="button is-primary" type="submit">Upload images</button>
-            </div>
-          </form>
-          <p id="imagesUploadMsg" class="help mt-2"></p>
+          </div>
         </div>
       </div>
     </div>
