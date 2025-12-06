@@ -11,8 +11,14 @@ class OSDViewer {
 
     this._textRegionColors = new Map();
     this._lineClickHandler = null;
+    this._regionClickHandler = null;
+    this._canvasClickHandler = null;
     this._canvasClickBound = false;
     this._lines = [];
+    this._regions = [];
+    this._tempShape = null;
+    this.imageDims = { width: null, height: null };
+    this._lockPan = false;
   }
 
   _hueFromId(id) {
@@ -99,10 +105,12 @@ class OSDViewer {
     this.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
     this.svg.setAttribute('width',  w);
     this.svg.setAttribute('height', h);
+    this.imageDims = { width: w, height: h };
   }
 
   setOverlays(regions = [], lines = []) {
     this._lines = Array.isArray(lines) ? lines : [];
+    this._regions = Array.isArray(regions) ? regions : [];
     this._ensureSvg(true); // true -> clear groups
     console.debug('[OSDViewer] setOverlays', { regions: regions?.length || 0, lines: this._lines.length });
     // Regions
@@ -113,14 +121,22 @@ class OSDViewer {
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         poly.setAttribute('class', 'region');
         poly.setAttribute('points', r.points.map(([x,y]) => `${x},${y}`).join(' '));
+        if (r.id) poly.dataset.regionId = r.id;
+        poly.style.pointerEvents = 'visiblePainted';
+        poly.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (this._regionClickHandler) {
+            this._regionClickHandler({ region: r, event: ev });
+          }
+        });
 
         const sty = this.styleForRegion(r.type, r);
         if (sty.fill === 'none') {
-          poly.setAttribute('fill', 'none');
-        } else {
-          poly.setAttribute('fill', sty.fill);
-          poly.setAttribute('fill-opacity', String(sty.fillOpacity ?? 0.1));
-        }
+        poly.setAttribute('fill', 'none');
+      } else {
+        poly.setAttribute('fill', sty.fill);
+        poly.setAttribute('fill-opacity', String(sty.fillOpacity ?? 0.1));
+      }
         poly.style.setProperty('fill', sty.fill);
         poly.style.setProperty('fill-opacity', String(sty.fillOpacity ?? 0.2));
         poly.style.setProperty('stroke', sty.stroke);
@@ -186,6 +202,39 @@ class OSDViewer {
     this._ensureLineDelegation();
   }
 
+  setSelection({ regionId = null, lineId = null } = {}) {
+    if (this.gRegions) {
+      this.gRegions.querySelectorAll('.region').forEach((el) => {
+        el.classList.toggle('selected', regionId && el.dataset.regionId === regionId);
+      });
+    }
+    if (this.gLines) {
+      this.gLines.querySelectorAll('.line').forEach((el) => {
+        el.classList.toggle('selected', lineId && el.dataset.lineId === lineId);
+      });
+    }
+  }
+
+  setTempShape(points = []) {
+    if (!this.gRegions) return;
+    if (this._tempShape && this._tempShape.parentNode) {
+      this._tempShape.parentNode.removeChild(this._tempShape);
+    }
+    if (!points.length) {
+      this._tempShape = null;
+      return;
+    }
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    poly.setAttribute('class', 'temp-shape');
+    poly.setAttribute('points', points.map(([x, y]) => `${x},${y}`).join(' '));
+    this.gRegions.appendChild(poly);
+    this._tempShape = poly;
+  }
+
+  clearTempShape() {
+    this.setTempShape([]);
+  }
+
   fit() {
     this.viewer.viewport.goHome(true);
   }
@@ -242,6 +291,14 @@ class OSDViewer {
     this._ensureLineDelegation();
   }
 
+  onRegionClick(handler) {
+    this._regionClickHandler = handler;
+  }
+
+  onCanvasClick(handler) {
+    this._canvasClickHandler = handler;
+  }
+
   _ensureLineDelegation() {
     if (!this.gLines) return;
     // remove previous listener by resetting
@@ -269,24 +326,57 @@ class OSDViewer {
   _bindCanvasClick() {
     if (!this.viewer || this._canvasClickBound) return;
     this._canvasClickBound = true;
+    this.viewer.addHandler('canvas-drag', (ev) => {
+      if (this._lockPan) {
+        ev.preventDefaultAction = true;
+        if (ev.originalEvent) {
+          ev.originalEvent.preventDefault();
+          ev.originalEvent.stopPropagation();
+        }
+      }
+    });
     this.viewer.addHandler('canvas-click', (ev) => {
-      // Only react to quick clicks and when lines are visible
-      if (!ev.quick || !this._lineClickHandler || !this.showLines) return;
       if (ev.originalEvent && ev.originalEvent.defaultPrevented) return;
       const viewportPt = this.viewer.viewport.pointFromPixel(ev.position);
       const imgPt = this.viewer.viewport.viewportToImageCoordinates(viewportPt);
-      const hit = this._hitTestLine(imgPt);
-      if (!hit) return;
 
-      // prevent OSD from also handling the click
-      ev.preventDefaultAction = true;
-      if (ev.originalEvent) {
-        ev.originalEvent.preventDefault();
-        ev.originalEvent.stopPropagation();
+      // General canvas click callback (used for drawing)
+      if (this._canvasClickHandler) {
+        this._canvasClickHandler({
+          image: { x: imgPt.x, y: imgPt.y },
+          viewport: { x: viewportPt.x, y: viewportPt.y },
+          pixel: { x: ev.position.x, y: ev.position.y }
+        });
       }
-      const payload = this._buildClickPayload(hit, ev.position);
-      console.debug('[OSDViewer] canvas line click', hit.id);
-      this._lineClickHandler(payload);
+
+      // Region hit detection
+      if (ev.quick && this._regionClickHandler && this.showRegions) {
+        const hitRegion = this._hitTestRegion(imgPt);
+        if (hitRegion) {
+          ev.preventDefaultAction = true;
+          if (ev.originalEvent) {
+            ev.originalEvent.preventDefault();
+            ev.originalEvent.stopPropagation();
+          }
+          this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: ev.position.x, y: ev.position.y } } });
+          return;
+        }
+      }
+
+      // Line hit detection if enabled
+      if (ev.quick && this._lineClickHandler && this.showLines) {
+        const hit = this._hitTestLine(imgPt);
+        if (!hit) return;
+
+        ev.preventDefaultAction = true;
+        if (ev.originalEvent) {
+          ev.originalEvent.preventDefault();
+          ev.originalEvent.stopPropagation();
+        }
+        const payload = this._buildClickPayload(hit, ev.position);
+        console.debug('[OSDViewer] canvas line click', hit.id);
+        this._lineClickHandler(payload);
+      }
     });
     console.debug('[OSDViewer] canvas click handler bound');
   }
@@ -332,6 +422,17 @@ class OSDViewer {
     return null;
   }
 
+  _hitTestRegion(pt) {
+    if (!pt || !this._regions || !this._regions.length) return null;
+    for (let i = this._regions.length - 1; i >= 0; i--) {
+      const r = this._regions[i];
+      if (r.points && r.points.length >= 3 && this._pointInPolygon(pt, r.points)) {
+        return r;
+      }
+    }
+    return null;
+  }
+
   _pointInPolygon(pt, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -369,6 +470,10 @@ class OSDViewer {
     const qx = p.x - projX;
     const qy = p.y - projY;
     return qx * qx + qy * qy;
+  }
+
+  setPanLock(flag) {
+    this._lockPan = !!flag;
   }
 }
 

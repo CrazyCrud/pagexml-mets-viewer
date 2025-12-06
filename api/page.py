@@ -13,7 +13,7 @@ from core.page import (
     _inject_page_namespace,
     PAGE_NS_FALLBACK,
 )
-from ocrd_models.ocrd_page import TextEquivType
+from ocrd_models.ocrd_page import TextEquivType, TextRegionType, TableRegionType, TextLineType, CoordsType, BaselineType
 from core.db import record_workspace
 
 
@@ -489,3 +489,318 @@ def save_transcription():
     record_workspace(ws_id)
 
     return jsonify({"ok": True, "updated": touched, "path": str(page_xml)})
+
+
+def _points_to_str(points: List[List[float]]) -> str:
+    return " ".join(f"{float(x)},{float(y)}" for x, y in points)
+
+
+def _ensure_region(page_obj, region_id: str, region_type: str, points: List[List[float]]):
+    coords = CoordsType(points=_points_to_str(points))
+    rt_lower = region_type.lower()
+    if rt_lower == "tableregion":
+        reg = TableRegionType(id=region_id, Coords=coords)
+        try:
+            page_obj.add_TableRegion(reg)
+        except Exception:
+            if hasattr(page_obj, "TableRegion") and isinstance(page_obj.TableRegion, list):
+                page_obj.TableRegion.append(reg)
+            else:
+                raise
+    else:
+        reg = TextRegionType(id=region_id, type_=region_type, Coords=coords)
+        try:
+            page_obj.add_TextRegion(reg)
+        except Exception:
+            # Some versions expose TextRegion attribute directly
+            if hasattr(page_obj, "TextRegion") and isinstance(page_obj.TextRegion, list):
+                page_obj.TextRegion.append(reg)
+            else:
+                raise
+    return reg
+
+
+def _iter_all_regions(page_obj):
+    # Prefer get_AllRegions if available
+    if hasattr(page_obj, "get_AllRegions") and callable(page_obj.get_AllRegions):
+        regs = page_obj.get_AllRegions() or []
+        for r in regs:
+            yield r
+        return
+    # Fallback: TextRegion + TableRegion lists
+    for r in getattr(page_obj, "get_TextRegion", lambda: [])() or getattr(page_obj, "TextRegion", []) or []:
+        yield r
+    for r in getattr(page_obj, "get_TableRegion", lambda: [])() or getattr(page_obj, "TableRegion", []) or []:
+        yield r
+
+
+def _existing_region_ids(page_obj) -> set:
+    ids = set()
+    for r in _iter_all_regions(page_obj):
+        rid = getattr(r, "id", "") or ""
+        if rid:
+            ids.add(rid)
+    return ids
+
+
+def _find_region(page_obj, region_id: str):
+    for r in _iter_all_regions(page_obj):
+        if getattr(r, "id", "") == region_id:
+            return r
+    return None
+
+
+def _generate_id(prefix: str, existing: set) -> str:
+    i = 1
+    while True:
+        cand = f"{prefix}{i}"
+        if cand not in existing:
+            return cand
+        i += 1
+
+
+@bp_page.post("/page/region")
+def add_or_update_region():
+    """
+    Add or update a region polygon.
+    JSON: {workspace_id, path, region:{id?, type, points:[[x,y],...]}}
+    """
+    payload = request.get_json(silent=True) or {}
+    ws_id = (payload.get("workspace_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    region = payload.get("region") or {}
+    r_type = (region.get("type") or "TextRegion").strip()
+    r_points = region.get("points") or []
+    r_id = (region.get("id") or "").strip()
+
+    if not ws_id or not rel:
+        abort(400, "workspace_id and path are required")
+    if not isinstance(r_points, list) or len(r_points) < 3:
+        abort(400, "points must be an array of at least 3 coordinate pairs")
+
+    base = (WORKSPACES_ROOT / ws_id).resolve()
+    if not base.is_dir():
+        abort(404, f"Workspace not found: {base}")
+
+    candidates = [
+        (base / "normalized" / rel).resolve(),
+        (base / "pages" / rel).resolve(),
+        (base / rel).resolve(),
+    ]
+    page_xml = next((p for p in candidates if p.is_file()), None)
+    if not page_xml:
+        abort(404, f"PAGE-XML not found: {rel}")
+
+    pcgts = parse_pcgts(str(page_xml))
+    page_obj = pcgts.get_Page()
+    if page_obj is None:
+        abort(400, "PAGE object missing in XML")
+
+    existing_ids = _existing_region_ids(page_obj)
+    if r_id:
+        reg = _find_region(page_obj, r_id)
+        if not reg:
+            abort(404, f"Region not found: {r_id}")
+        try:
+            reg.set_type(r_type)
+        except Exception:
+            try:
+                reg.type_ = r_type
+            except Exception:
+                pass
+        try:
+            reg.set_Coords(CoordsType(points=_points_to_str(r_points)))
+        except Exception:
+            reg.Coords = CoordsType(points=_points_to_str(r_points))
+    else:
+        r_id = _generate_id("r", existing_ids)
+        reg = _ensure_region(page_obj, r_id, r_type, r_points)
+
+    xml_out = _serialize_pcgts(pcgts)
+    page_xml.write_text(xml_out, encoding="utf-8")
+    record_workspace(ws_id)
+
+    return jsonify({"ok": True, "region": {"id": r_id, "type": r_type, "points": r_points}})
+
+
+@bp_page.post("/page/line")
+def add_or_update_line():
+    """
+    Add or update a TextLine polygon/baseline/text.
+    JSON: {workspace_id, path, line:{id?, region_id, points, baseline, text}}
+    """
+    payload = request.get_json(silent=True) or {}
+    ws_id = (payload.get("workspace_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    line = payload.get("line") or {}
+    l_id = (line.get("id") or "").strip()
+    region_id = (line.get("region_id") or "").strip()
+    l_points = line.get("points") or []
+    l_baseline = line.get("baseline") or []
+    l_text = line.get("text") or ""
+
+    if not ws_id or not rel or not region_id:
+        abort(400, "workspace_id, path, and region_id are required")
+    if not l_points and not l_baseline:
+        abort(400, "Provide points and/or baseline for the line")
+
+    base = (WORKSPACES_ROOT / ws_id).resolve()
+    if not base.is_dir():
+        abort(404, f"Workspace not found: {base}")
+
+    candidates = [
+        (base / "normalized" / rel).resolve(),
+        (base / "pages" / rel).resolve(),
+        (base / rel).resolve(),
+    ]
+    page_xml = next((p for p in candidates if p.is_file()), None)
+    if not page_xml:
+        abort(404, f"PAGE-XML not found: {rel}")
+
+    pcgts = parse_pcgts(str(page_xml))
+    page_obj = pcgts.get_Page()
+    if page_obj is None:
+        abort(400, "PAGE object missing in XML")
+
+    region_obj = _find_region(page_obj, region_id)
+    if not region_obj:
+        abort(404, f"Region not found: {region_id}")
+
+    lines = getattr(region_obj, "get_TextLine", lambda: [])() or getattr(region_obj, "TextLine", []) or []
+    existing_ids = {getattr(l, "id", "") for l in lines if getattr(l, "id", "")}
+
+    target_line = None
+    if l_id:
+        target_line = next((ln for ln in lines if getattr(ln, "id", "") == l_id), None)
+        if not target_line:
+            abort(404, f"Line not found: {l_id}")
+    else:
+        l_id = _generate_id("l", existing_ids)
+        target_line = TextLineType(id=l_id)
+        try:
+            region_obj.add_TextLine(target_line)
+        except Exception:
+            if hasattr(region_obj, "TextLine") and isinstance(region_obj.TextLine, list):
+                region_obj.TextLine.append(target_line)
+            else:
+                raise
+
+    if l_points:
+        target_line.set_Coords(CoordsType(points=_points_to_str(l_points)))
+    if l_baseline:
+        target_line.set_Baseline(BaselineType(points=_points_to_str(l_baseline)))
+
+    if l_text is not None:
+        te = TextEquivType(Unicode=str(l_text))
+        try:
+            target_line.set_TextEquiv([te])
+        except Exception:
+            target_line.TextEquiv = [te]
+
+    xml_out = _serialize_pcgts(pcgts)
+    page_xml.write_text(xml_out, encoding="utf-8")
+    record_workspace(ws_id)
+
+    return jsonify({"ok": True, "line": {"id": l_id, "region_id": region_id, "points": l_points, "baseline": l_baseline, "text": l_text}})
+
+
+@bp_page.post("/page/region/delete")
+def delete_region():
+    payload = request.get_json(silent=True) or {}
+    ws_id = (payload.get("workspace_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    rid = (payload.get("region_id") or "").strip()
+    if not ws_id or not rel or not rid:
+        abort(400, "workspace_id, path, and region_id are required")
+
+    base = (WORKSPACES_ROOT / ws_id).resolve()
+    if not base.is_dir():
+        abort(404, f"Workspace not found: {base}")
+
+    candidates = [
+        (base / "normalized" / rel).resolve(),
+        (base / "pages" / rel).resolve(),
+        (base / rel).resolve(),
+    ]
+    page_xml = next((p for p in candidates if p.is_file()), None)
+    if not page_xml:
+        abort(404, f"PAGE-XML not found: {rel}")
+
+    pcgts = parse_pcgts(str(page_xml))
+    page_obj = pcgts.get_Page()
+    reg = _find_region(page_obj, rid)
+    if not reg:
+        abort(404, f"Region not found: {rid}")
+
+    removed = False
+    try:
+        if hasattr(page_obj, "remove_TextRegion"):
+            page_obj.remove_TextRegion(reg)
+            removed = True
+    except Exception:
+        pass
+    if not removed:
+        for attr in ("TextRegion", "TableRegion"):
+            lst = getattr(page_obj, attr, None)
+            if isinstance(lst, list) and reg in lst:
+                lst.remove(reg)
+                removed = True
+                break
+    if not removed:
+        abort(400, "Failed to remove region")
+
+    xml_out = _serialize_pcgts(pcgts)
+    page_xml.write_text(xml_out, encoding="utf-8")
+    record_workspace(ws_id)
+    return jsonify({"ok": True, "region_id": rid})
+
+
+@bp_page.post("/page/line/delete")
+def delete_line():
+    payload = request.get_json(silent=True) or {}
+    ws_id = (payload.get("workspace_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    lid = (payload.get("line_id") or "").strip()
+    if not ws_id or not rel or not lid:
+        abort(400, "workspace_id, path, and line_id are required")
+
+    base = (WORKSPACES_ROOT / ws_id).resolve()
+    if not base.is_dir():
+        abort(404, f"Workspace not found: {base}")
+
+    candidates = [
+        (base / "normalized" / rel).resolve(),
+        (base / "pages" / rel).resolve(),
+        (base / rel).resolve(),
+    ]
+    page_xml = next((p for p in candidates if p.is_file()), None)
+    if not page_xml:
+        abort(404, f"PAGE-XML not found: {rel}")
+
+    pcgts = parse_pcgts(str(page_xml))
+    page_obj = pcgts.get_Page()
+    found = False
+    regions = list(_iter_all_regions(page_obj))
+    for reg in regions:
+        lines = getattr(reg, "get_TextLine", lambda: [])() or getattr(reg, "TextLine", []) or []
+        for ln in list(lines):
+            if getattr(ln, "id", "") == lid:
+                try:
+                    reg.remove_TextLine(ln)
+                except Exception:
+                    if hasattr(reg, "TextLine") and isinstance(reg.TextLine, list):
+                        try:
+                            reg.TextLine.remove(ln)
+                        except Exception:
+                            pass
+                found = True
+                break
+        if found:
+            break
+    if not found:
+        abort(404, f"Line not found: {lid}")
+
+    xml_out = _serialize_pcgts(pcgts)
+    page_xml.write_text(xml_out, encoding="utf-8")
+    record_workspace(ws_id)
+    return jsonify({"ok": True, "line_id": lid})

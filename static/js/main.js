@@ -11,6 +11,13 @@ $(function () {
   let hasPendingChanges = false;
   const sectionIds = ['workspace', 'uploads', 'files', 'viewer'];
   let workspaceLabel = null;
+  let drawMode = 'select'; // select | addRegion | addLine
+  let drawPoints = [];
+  let selectedRegionId = null;
+  let selectedLineId = null;
+  let dragState = null; // {type, id, lastImg}
+  let dragMoved = false;
+  let navBackup = null;
 
   const viewer = new OSDViewer();
   viewer.mount(document.getElementById('osd'));
@@ -141,6 +148,14 @@ $(function () {
     $('#files').show();
   }
 
+  function getRegionById(rid) {
+    return currentRegions.find(r => r.id === rid);
+  }
+
+  function getLineById(lid) {
+    return currentLines.find(l => l.id === lid);
+  }
+
   function renderStats(stats) {
     const panel = document.getElementById('stats-panel');
     const content = document.getElementById('stats-content');
@@ -172,6 +187,16 @@ $(function () {
     $('#commitNotice').toggle(committed);
     $('#commitBadge').toggle(hasPendingChanges);
     updateDownloadButton();
+  }
+
+  function setMode(mode) {
+    drawMode = mode;
+    drawPoints = [];
+    if (viewer.clearTempShape) viewer.clearTempShape();
+    $('#modeStatus').text(`Mode: ${mode === 'addRegion' ? 'Add Region' : mode === 'addLine' ? 'Add Line' : 'Select'}`);
+    $('#modeSelect').toggleClass('is-link', mode === 'select').toggleClass('is-light', mode !== 'select');
+    $('#modeAddRegion').toggleClass('is-link', mode === 'addRegion').toggleClass('is-light', mode !== 'addRegion');
+    $('#modeAddLine').toggleClass('is-link', mode === 'addLine').toggleClass('is-light', mode !== 'addLine');
   }
 
   function updateFileName(input, target) {
@@ -420,6 +445,9 @@ $(function () {
     $('#wsLabelInput').val('');
     $('#wsLabelStatus').text('').removeClass('is-danger is-success');
     $('#wsStatus').text('').removeClass('is-danger is-success');
+    drawPoints = [];
+    if (viewer.clearTempShape) viewer.clearTempShape();
+    setMode('select');
 
     $('#metsInput').val(''); $('#metsInputName').text('No file selected');
     $('#pagesInput').val(''); $('#pagesInputName').text('No files selected');
@@ -462,6 +490,9 @@ $(function () {
     $('#viewer').show();
     showSection('viewer');
     currentPage = pageName;
+    drawPoints = [];
+    if (viewer.clearTempShape) viewer.clearTempShape();
+    setMode('select');
 
     $.getJSON('/api/page', { workspace_id: wsId, path: pageName })
       .done(function (data) {
@@ -475,6 +506,7 @@ $(function () {
         });
         renderStats(data.stats);
         renderTranscriptions();
+        if (viewer.setSelection) viewer.setSelection({});
         console.debug('[main] page loaded', { page: pageName, lines: currentLines.length, regions: currentRegions.length });
       })
       .fail(function (xhr) {
@@ -507,6 +539,304 @@ $(function () {
   fetchWorkspaceList();
   showSection('workspace');
   updateTabAvailability();
+  setMode('select');
+
+  // Mode buttons
+  $('#modeSelect').on('click', () => setMode('select'));
+  $('#modeAddRegion').on('click', () => setMode('addRegion'));
+  $('#modeAddLine').on('click', () => setMode('addLine'));
+
+  // Canvas clicks for drawing
+  if (viewer.onCanvasClick) {
+    viewer.onCanvasClick((pt) => {
+      if (!workspaceId || !currentPage) return;
+      if (drawMode === 'select') return;
+      drawPoints.push([pt.image.x, pt.image.y]);
+      if (viewer.setTempShape) viewer.setTempShape(drawPoints);
+    });
+  }
+
+  // Region selection
+  if (viewer.onRegionClick) {
+    viewer.onRegionClick(({ region }) => {
+      if (!region) return;
+      selectedRegionId = region.id || null;
+      selectedLineId = null;
+      setMode('select');
+      if (viewer.setSelection) viewer.setSelection({ regionId: selectedRegionId });
+    });
+  }
+
+  // Enhance line click to set selection
+  viewer.onLineClick((payload) => {
+    if (!payload) return;
+    if (dragState) return;
+    const line = payload.line || payload;
+    selectedLineId = line.id || null;
+    selectedRegionId = line.region_id || null;
+    setMode('select');
+    if (viewer.setSelection) viewer.setSelection({ lineId: selectedLineId });
+    // existing modal behavior
+    showLineModal(line, payload.click || null);
+  });
+
+  // Double-click or Enter to finish shape
+  $('#osd').on('dblclick', function (e) {
+    e.preventDefault();
+    finishDrawing();
+  });
+  $(document).on('keydown', function (e) {
+    // Delete selected shape
+    if (e.key === 'Delete' && drawMode === 'select') {
+      if (selectedLineId) {
+        deleteLine(selectedLineId);
+      } else if (selectedRegionId) {
+        deleteRegion(selectedRegionId);
+      }
+      return;
+    }
+    if (drawMode === 'select') return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finishDrawing();
+    }
+    if (e.key === 'Escape') {
+      drawPoints = [];
+      if (viewer.clearTempShape) viewer.clearTempShape();
+    }
+  });
+
+  // Drag selection (move whole shape)
+  $(document).on('mousedown', '#osd svg .region, #osd svg .line', function (e) {
+    if (drawMode !== 'select') return;
+    if (!workspaceId || !currentPage) return;
+    const isRegion = $(this).hasClass('region');
+    const id = isRegion ? $(this).data('regionId') : $(this).data('lineId');
+    if (!id) return;
+    const pt = eventToImage(e);
+    if (!pt) return;
+    dragState = { type: isRegion ? 'region' : 'line', id, lastImg: pt.img };
+    dragMoved = false;
+    selectedRegionId = isRegion ? id : null;
+    selectedLineId = isRegion ? null : id;
+    if (viewer.setSelection) viewer.setSelection({ regionId: selectedRegionId, lineId: selectedLineId });
+    if (viewer.setPanLock) viewer.setPanLock(true);
+    if (viewer.viewer && typeof viewer.viewer.setMouseNavEnabled === 'function') {
+      viewer.viewer.setMouseNavEnabled(false);
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  $(document).on('mousemove', function (e) {
+    if (!dragState) return;
+    const delta = imgDeltaFromScreen(e, dragState.lastImg);
+    if (!delta) return;
+    const dx = delta.dx;
+    const dy = delta.dy;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
+    dragMoved = true;
+    dragState.lastImg = delta.img;
+    if (dragState.type === 'region') {
+      const reg = getRegionById(dragState.id);
+      if (!reg || !reg.points) return;
+      reg.points = reg.points.map(([x, y]) => [x + dx, y + dy]);
+      viewer.setOverlays(currentRegions, currentLines);
+    } else if (dragState.type === 'line') {
+      const ln = getLineById(dragState.id);
+      if (!ln) return;
+      if (ln.points) ln.points = ln.points.map(([x, y]) => [x + dx, y + dy]);
+      if (ln.baseline) ln.baseline = ln.baseline.map(([x, y]) => [x + dx, y + dy]);
+      viewer.setOverlays(currentRegions, currentLines);
+      viewer.setSelection({ lineId: ln.id });
+    }
+  });
+
+  $(document).on('mouseup', function () {
+    if (!dragState) return;
+    if (dragMoved) {
+      if (dragState.type === 'region') {
+        const reg = getRegionById(dragState.id);
+        if (reg) {
+          saveRegionUpdate(reg);
+        }
+      } else if (dragState.type === 'line') {
+        const ln = getLineById(dragState.id);
+        if (ln) {
+          saveLineUpdate(ln);
+        }
+      }
+    }
+    dragState = null;
+    dragMoved = false;
+    if (viewer.setPanLock) viewer.setPanLock(false);
+    if (viewer.viewer && typeof viewer.viewer.setMouseNavEnabled === 'function') {
+      viewer.viewer.setMouseNavEnabled(true);
+    }
+  });
+
+  function finishDrawing() {
+    if (!workspaceId || !currentPage) return;
+    if (!drawPoints.length) return;
+    if (drawMode === 'addRegion') {
+      saveNewRegion(drawPoints.slice());
+    } else if (drawMode === 'addLine') {
+      saveNewLine(drawPoints.slice());
+    }
+    drawPoints = [];
+    if (viewer.clearTempShape) viewer.clearTempShape();
+  }
+
+  function eventToImage(ev) {
+    if (!viewer || !viewer.viewer) return null;
+    const rect = document.getElementById('osd').getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const py = ev.clientY - rect.top;
+    const vp = viewer.viewer.viewport.pointFromPixel(new OpenSeadragon.Point(px, py));
+    const img = viewer.viewer.viewport.viewportToImageCoordinates(vp);
+    return { img, pixel: { x: px, y: py } };
+  }
+
+  function saveNewRegion(points) {
+    if (!points || points.length < 3) {
+      alert('Add at least 3 points for a region.');
+      return;
+    }
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      region: { type: 'TextRegion', points }
+    };
+    $.ajax({
+      url: '/api/page/region',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      currentRegions.push(resp.region);
+      viewer.setOverlays(currentRegions, currentLines);
+      setPendingChanges(true);
+    }).fail(function (xhr) {
+      alert(`Failed to add region: ${xhr.responseText || xhr.status}`);
+    });
+  }
+
+  function saveRegionUpdate(reg) {
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      region: { id: reg.id, type: reg.type || 'TextRegion', points: reg.points || [] }
+    };
+    $.ajax({
+      url: '/api/page/region',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      const idx = currentRegions.findIndex(r => r.id === reg.id);
+      if (idx >= 0) currentRegions[idx] = { ...currentRegions[idx], ...resp.region };
+      viewer.setOverlays(currentRegions, currentLines);
+      setPendingChanges(true);
+    }).fail(function (xhr) {
+      alert(`Failed to update region: ${xhr.responseText || xhr.status}`);
+    });
+  }
+
+  function saveNewLine(points) {
+    if (!points || points.length < 2) {
+      alert('Add at least 2 points for a line.');
+      return;
+    }
+    const targetRegion = selectedRegionId ? getRegionById(selectedRegionId) : currentRegions[0];
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      line: {
+        region_id: targetRegion ? targetRegion.id : '',
+        points: points,
+        baseline: [],
+        text: ''
+      }
+    };
+    if (!payload.line.region_id) {
+      alert('Add a Text Region first before adding lines.');
+      return;
+    }
+    $.ajax({
+      url: '/api/page/line',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      currentLines.push(resp.line);
+      viewer.setOverlays(currentRegions, currentLines);
+      setPendingChanges(true);
+    }).fail(function (xhr) {
+      alert(`Failed to add line: ${xhr.responseText || xhr.status}`);
+    });
+  }
+
+  function saveLineUpdate(ln) {
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      line: {
+        id: ln.id,
+        region_id: ln.region_id,
+        points: ln.points || [],
+        baseline: ln.baseline || [],
+        text: ln.text || ''
+      }
+    };
+    $.ajax({
+      url: '/api/page/line',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      const idx = currentLines.findIndex(l => l.id === ln.id);
+      if (idx >= 0) currentLines[idx] = { ...currentLines[idx], ...resp.line };
+      viewer.setOverlays(currentRegions, currentLines);
+      setPendingChanges(true);
+    }).fail(function (xhr) {
+      alert(`Failed to update line: ${xhr.responseText || xhr.status}`);
+    });
+  }
+
+  function deleteRegion(id) {
+    if (!id || !workspaceId || !currentPage) return;
+    $.ajax({
+      url: '/api/page/region/delete',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({ workspace_id: workspaceId, path: currentPage, region_id: id })
+    }).done(function () {
+      currentRegions = currentRegions.filter(r => r.id !== id);
+      currentLines = currentLines.filter(l => l.region_id !== id);
+      viewer.setOverlays(currentRegions, currentLines);
+      selectedRegionId = null;
+      setPendingChanges(true);
+    }).fail(function (xhr) {
+      alert(`Failed to delete region: ${xhr.responseText || xhr.status}`);
+    });
+  }
+
+  function deleteLine(id) {
+    if (!id || !workspaceId || !currentPage) return;
+    $.ajax({
+      url: '/api/page/line/delete',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({ workspace_id: workspaceId, path: currentPage, line_id: id })
+    }).done(function () {
+      currentLines = currentLines.filter(l => l.id !== id);
+      viewer.setOverlays(currentRegions, currentLines);
+      selectedLineId = null;
+      setPendingChanges(true);
+    }).fail(function (xhr) {
+      alert(`Failed to delete line: ${xhr.responseText || xhr.status}`);
+    });
+  }
 
   // Accordion behavior
   $(document).on('click', '.accordion-trigger', function () {
@@ -588,11 +918,13 @@ $(function () {
     });
   });
 
-  // Bridge line clicks from OSD overlays to modal
-  viewer.onLineClick((payload) => {
-    if (!payload) return;
-    const line = payload.line || payload;
-    console.debug('[main] viewer.onLineClick', line);
-    showLineModal(line, payload.click || null);
-  });
 });
+  function imgDeltaFromScreen(ev, lastImg) {
+    const rect = document.getElementById('osd').getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const py = ev.clientY - rect.top;
+    if (!viewer.viewer || !viewer.viewer.viewport) return null;
+    const vp = viewer.viewer.viewport.pointFromPixel(new OpenSeadragon.Point(px, py));
+    const img = viewer.viewer.viewport.viewportToImageCoordinates(vp);
+    return { img, dx: img.x - lastImg.x, dy: img.y - lastImg.y };
+  }

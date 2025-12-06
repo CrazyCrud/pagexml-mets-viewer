@@ -22,6 +22,7 @@
   stroke: transparent;
   /* keep width if you want, or let JS set it */
   stroke-width: 1px;
+  pointer-events: auto;
 }
 
 #osd svg g[data-layer="lines"] .line {
@@ -39,14 +40,18 @@
 }
 
 .openseadragon-overlay {
-  pointer-events: none; /* default wrapper; let children opt-in */
+  pointer-events: auto !important;
 }
 
 .openseadragon-overlay svg {
-  pointer-events: none;
+  pointer-events: auto !important;
 }
 
 .openseadragon-overlay svg [data-line-id] {
+  pointer-events: auto;
+}
+
+.openseadragon-overlay svg [data-region-id] {
   pointer-events: auto;
 }
 
@@ -138,4 +143,21 @@
   padding: 1rem;
   display: none;
   background: #fff;
+}
+
+.region.selected {
+  stroke: #ff9800 !important;
+  stroke-width: 2px !important;
+  fill-opacity: 0.15 !important;
+}
+
+.line.selected {
+  stroke: #ff9800 !important;
+  fill-opacity: 0.2 !important;
+}
+
+.temp-shape {
+  stroke: #4a90e2;
+  fill: #4a90e222;
+  stroke-dasharray: 4 4;
 }
