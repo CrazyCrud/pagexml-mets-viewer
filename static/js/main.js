@@ -197,6 +197,11 @@ $(function () {
     $('#modeSelect').toggleClass('is-link', mode === 'select').toggleClass('is-light', mode !== 'select');
     $('#modeAddRegion').toggleClass('is-link', mode === 'addRegion').toggleClass('is-light', mode !== 'addRegion');
     $('#modeAddLine').toggleClass('is-link', mode === 'addLine').toggleClass('is-light', mode !== 'addLine');
+
+    // Disable pointer events on shapes when in drawing mode so clicks pass through to canvas
+    if (viewer.setShapesInteractive) {
+      viewer.setShapesInteractive(mode === 'select');
+    }
   }
 
   function updateFileName(input, target) {
@@ -571,9 +576,10 @@ $(function () {
   if (viewer.onRegionClick) {
     viewer.onRegionClick(({ region }) => {
       if (!region) return;
+      // Don't select regions when in drawing mode
+      if (drawMode !== 'select') return;
       selectedRegionId = region.id || null;
       selectedLineId = null;
-      setMode('select');
       if (viewer.setSelection) viewer.setSelection({ regionId: selectedRegionId });
     });
   }
@@ -582,10 +588,11 @@ $(function () {
   viewer.onLineClick((payload) => {
     if (!payload) return;
     if (dragState) return;
+    // Don't select lines when in drawing mode
+    if (drawMode !== 'select') return;
     const line = payload.line || payload;
     selectedLineId = line.id || null;
     selectedRegionId = line.region_id || null;
-    setMode('select');
     if (viewer.setSelection) viewer.setSelection({ lineId: selectedLineId });
     // existing modal behavior
     showLineModal(line, payload.click || null);
@@ -645,8 +652,12 @@ $(function () {
 
   // Drag selection (move whole shape)
   $(document).on('mousedown', '#osd svg .region, #osd svg .line', function (e) {
-    console.debug('[main] shape mousedown', e.button, $(this).attr('class'));
-    if (drawMode !== 'select') return;
+    console.debug('[main] shape mousedown', e.button, $(this).attr('class'), 'drawMode:', drawMode);
+    if (drawMode !== 'select') {
+      console.debug('[main] ignoring shape mousedown - not in select mode, allowing event to propagate');
+      // Don't preventDefault/stopPropagation so the click can reach the canvas handler for drawing
+      return;
+    }
     if (!workspaceId || !currentPage) return;
     const isRegion = $(this).hasClass('region');
     const id = isRegion ? $(this).data('regionId') : $(this).data('lineId');

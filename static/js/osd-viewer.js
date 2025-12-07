@@ -19,6 +19,7 @@ class OSDViewer {
     this._tempShape = null;
     this.imageDims = { width: null, height: null };
     this._lockPan = false;
+    this._shapesInteractive = true; // Track whether shapes should respond to mouse events
 
     // Point editing
     this._selectedPoint = null; // {type: 'region'|'line', id, pointIndex, isBaseline}
@@ -144,7 +145,7 @@ class OSDViewer {
         poly.setAttribute('class', 'region');
         poly.setAttribute('points', r.points.map(([x,y]) => `${x},${y}`).join(' '));
         if (r.id) poly.dataset.regionId = r.id;
-        poly.style.pointerEvents = 'visiblePainted';
+        poly.style.pointerEvents = this._shapesInteractive ? 'visiblePainted' : 'none';
         poly.addEventListener('click', (ev) => {
           ev.stopPropagation();
           if (this._regionClickHandler) {
@@ -188,7 +189,7 @@ class OSDViewer {
         poly.setAttribute('stroke-opacity', '0.9');
         poly.setAttribute('stroke-width', '1');
         if (l.id) poly.dataset.lineId = l.id;
-        poly.style.pointerEvents = 'visiblePainted';
+        poly.style.pointerEvents = this._shapesInteractive ? 'visiblePainted' : 'none';
 
           if (l.text && l.text.trim().length > 0) {
               const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
@@ -207,7 +208,7 @@ class OSDViewer {
           pl.setAttribute('stroke-opacity', '0.9');
           pl.setAttribute('stroke-width', '1.5');
           if (l.id) pl.dataset.lineId = l.id;
-          pl.style.pointerEvents = 'visiblePainted';
+          pl.style.pointerEvents = this._shapesInteractive ? 'visiblePainted' : 'none';
 
             if (l.text && l.text.trim().length > 0) {
               const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
@@ -397,12 +398,6 @@ class OSDViewer {
         return;
       }
 
-      // Check if click was on SVG elements (regions/lines) - let their handlers deal with it
-      if (e.target.closest('.region') || e.target.closest('.line') || e.target.closest('.base') || e.target.closest('.point-handle')) {
-        console.debug('[OSDViewer] click on SVG element, ignoring');
-        return;
-      }
-
       const rect = this._mountedEl.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
@@ -412,31 +407,34 @@ class OSDViewer {
 
       let hitSomething = false;
 
-      // Line hit detection - check lines FIRST (they're on top visually)
-      if (this._lineClickHandler && this.showLines) {
-        const hit = this._hitTestLine(imgPt);
-        if (hit) {
-          hitSomething = true;
-          const payload = this._buildClickPayload(hit, webPoint);
-          console.debug('[OSDViewer] canvas line click', hit.id);
-          this._lineClickHandler(payload);
-          return;
+      // Only do hit-testing if shapes are interactive (not in drawing mode)
+      if (this._shapesInteractive) {
+        // Line hit detection - check lines FIRST (they're on top visually)
+        if (this._lineClickHandler && this.showLines) {
+          const hit = this._hitTestLine(imgPt);
+          if (hit) {
+            hitSomething = true;
+            const payload = this._buildClickPayload(hit, webPoint);
+            console.debug('[OSDViewer] canvas line click', hit.id);
+            this._lineClickHandler(payload);
+            return;
+          }
         }
-      }
 
-      // Region hit detection - check regions SECOND (they're underneath)
-      if (!hitSomething && this._regionClickHandler && this.showRegions) {
-        const hitRegion = this._hitTestRegion(imgPt);
-        if (hitRegion) {
-          hitSomething = true;
-          this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: px, y: py } } });
-          return;
+        // Region hit detection - check regions SECOND (they're underneath)
+        if (!hitSomething && this._regionClickHandler && this.showRegions) {
+          const hitRegion = this._hitTestRegion(imgPt);
+          if (hitRegion) {
+            hitSomething = true;
+            this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: px, y: py } } });
+            return;
+          }
         }
       }
 
       // General canvas click callback (used for drawing and deselection)
       // Only fires if we didn't hit a region or line
-      console.debug('[OSDViewer] Calling canvas click handler, hitSomething:', hitSomething);
+      console.debug('[OSDViewer] Calling canvas click handler, hitSomething:', hitSomething, '_shapesInteractive:', this._shapesInteractive);
       if (this._canvasClickHandler) {
         this._canvasClickHandler({
           image: { x: imgPt.x, y: imgPt.y },
@@ -546,6 +544,30 @@ class OSDViewer {
 
   setDragging(flag) {
     this._isDragging = !!flag;
+  }
+
+  setShapesInteractive(interactive) {
+    // Enable or disable pointer events on shape overlays
+    // When disabled, clicks pass through to the canvas handler (for drawing mode)
+    this._shapesInteractive = interactive;
+    const value = interactive ? 'auto' : 'none';
+
+    if (this.gRegions) {
+      this.gRegions.style.pointerEvents = value;
+      // Also set on individual children to override their visiblePainted setting
+      this.gRegions.querySelectorAll('.region').forEach(el => {
+        el.style.pointerEvents = value;
+      });
+    }
+    if (this.gLines) {
+      this.gLines.style.pointerEvents = value;
+      // Also set on individual children to override their visiblePainted setting
+      this.gLines.querySelectorAll('.line, .base').forEach(el => {
+        el.style.pointerEvents = value;
+      });
+    }
+
+    console.debug('[OSDViewer] setShapesInteractive:', interactive);
   }
 
   _bindMiddleButtonPan() {
