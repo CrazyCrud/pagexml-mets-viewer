@@ -15,7 +15,7 @@ $(function () {
   let drawPoints = [];
   let selectedRegionId = null;
   let selectedLineId = null;
-  let dragState = null; // {type, id, lastImg}
+  let dragState = null; // {type, id, lastImg} or {type: 'point', shapeType, shapeId, pointIndex, isBaseline, lastImg}
   let dragMoved = false;
   let navBackup = null;
 
@@ -606,8 +606,35 @@ $(function () {
     }
   });
 
+  // Point handle dragging (individual point editing)
+  $(document).on('mousedown', '#osd svg .point-handle', function (e) {
+    console.debug('[main] point-handle mousedown', e.button);
+    if (drawMode !== 'select') return;
+    if (!workspaceId || !currentPage) return;
+    const pointIndex = parseInt($(this).data('pointIndex'), 10);
+    const shapeType = $(this).data('shapeType');
+    const shapeId = $(this).data('shapeId');
+    const isBaseline = $(this).data('isBaseline') === 'true';
+    const pt = eventToImage(e);
+    if (!pt) return;
+    dragState = {
+      type: 'point',
+      shapeType,
+      shapeId,
+      pointIndex,
+      isBaseline,
+      lastImg: pt.img
+    };
+    dragMoved = false;
+    console.debug('[main] point drag started', dragState);
+    if (viewer.setPanLock) viewer.setPanLock(true);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
   // Drag selection (move whole shape)
   $(document).on('mousedown', '#osd svg .region, #osd svg .line', function (e) {
+    console.debug('[main] shape mousedown', e.button, $(this).attr('class'));
     if (drawMode !== 'select') return;
     if (!workspaceId || !currentPage) return;
     const isRegion = $(this).hasClass('region');
@@ -619,17 +646,17 @@ $(function () {
     dragMoved = false;
     selectedRegionId = isRegion ? id : null;
     selectedLineId = isRegion ? null : id;
+    console.debug('[main] shape drag started', dragState);
     if (viewer.setSelection) viewer.setSelection({ regionId: selectedRegionId, lineId: selectedLineId });
     if (viewer.setPanLock) viewer.setPanLock(true);
-    if (viewer.viewer && typeof viewer.viewer.setMouseNavEnabled === 'function') {
-      viewer.viewer.setMouseNavEnabled(false);
-    }
     e.preventDefault();
     e.stopPropagation();
   });
 
-  $(document).on('mousemove', function (e) {
+  // Use native DOM events on OSD container instead of document to avoid OpenSeadragon event blocking
+  document.getElementById('osd').addEventListener('mousemove', function (e) {
     if (!dragState) return;
+    console.debug('[main] mousemove firing', dragState.type);
     const delta = imgDeltaFromScreen(e, dragState.lastImg);
     if (!delta) return;
     const dx = delta.dx;
@@ -637,7 +664,28 @@ $(function () {
     if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
     dragMoved = true;
     dragState.lastImg = delta.img;
-    if (dragState.type === 'region') {
+
+    // Signal to viewer that we're dragging
+    if (viewer.setDragging) viewer.setDragging(true);
+
+    if (dragState.type === 'point') {
+      // Individual point dragging
+      const { shapeType, shapeId, pointIndex, isBaseline } = dragState;
+      if (shapeType === 'region') {
+        const reg = getRegionById(shapeId);
+        if (!reg || !reg.points || !reg.points[pointIndex]) return;
+        reg.points[pointIndex] = [reg.points[pointIndex][0] + dx, reg.points[pointIndex][1] + dy];
+        viewer.setOverlays(currentRegions, currentLines);
+      } else if (shapeType === 'line') {
+        const ln = getLineById(shapeId);
+        if (!ln) return;
+        const points = isBaseline ? ln.baseline : ln.points;
+        if (!points || !points[pointIndex]) return;
+        points[pointIndex] = [points[pointIndex][0] + dx, points[pointIndex][1] + dy];
+        viewer.setOverlays(currentRegions, currentLines);
+        viewer.setSelection({ lineId: ln.id });
+      }
+    } else if (dragState.type === 'region') {
       const reg = getRegionById(dragState.id);
       if (!reg || !reg.points) return;
       reg.points = reg.points.map(([x, y]) => [x + dx, y + dy]);
@@ -652,10 +700,27 @@ $(function () {
     }
   });
 
-  $(document).on('mouseup', function () {
+  // Use native DOM events on OSD container for mouseup too
+  document.getElementById('osd').addEventListener('mouseup', function () {
     if (!dragState) return;
+
+    console.debug('[main] mouseup, dragMoved:', dragMoved);
+
+    // Keep dragging flag set until after click events fire
+    const wasDragging = dragMoved;
+
     if (dragMoved) {
-      if (dragState.type === 'region') {
+      if (dragState.type === 'point') {
+        // Save the shape that contains the modified point
+        const { shapeType, shapeId } = dragState;
+        if (shapeType === 'region') {
+          const reg = getRegionById(shapeId);
+          if (reg) saveRegionUpdate(reg);
+        } else if (shapeType === 'line') {
+          const ln = getLineById(shapeId);
+          if (ln) saveLineUpdate(ln);
+        }
+      } else if (dragState.type === 'region') {
         const reg = getRegionById(dragState.id);
         if (reg) {
           saveRegionUpdate(reg);
@@ -667,11 +732,17 @@ $(function () {
         }
       }
     }
+
     dragState = null;
     dragMoved = false;
     if (viewer.setPanLock) viewer.setPanLock(false);
-    if (viewer.viewer && typeof viewer.viewer.setMouseNavEnabled === 'function') {
-      viewer.viewer.setMouseNavEnabled(true);
+
+    // Let the dragging flag persist briefly so click handlers can see it
+    if (wasDragging && viewer.setDragging) {
+      // Don't clear it immediately - let the click handler check it first
+      setTimeout(() => {
+        if (viewer.setDragging) viewer.setDragging(false);
+      }, 50);
     }
   });
 
@@ -918,7 +989,6 @@ $(function () {
     });
   });
 
-});
   function imgDeltaFromScreen(ev, lastImg) {
     const rect = document.getElementById('osd').getBoundingClientRect();
     const px = ev.clientX - rect.left;
@@ -928,3 +998,5 @@ $(function () {
     const img = viewer.viewer.viewport.viewportToImageCoordinates(vp);
     return { img, dx: img.x - lastImg.x, dy: img.y - lastImg.y };
   }
+
+});

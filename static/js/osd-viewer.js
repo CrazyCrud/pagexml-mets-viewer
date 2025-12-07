@@ -19,6 +19,13 @@ class OSDViewer {
     this._tempShape = null;
     this.imageDims = { width: null, height: null };
     this._lockPan = false;
+
+    // Point editing
+    this._selectedPoint = null; // {type: 'region'|'line', id, pointIndex, isBaseline}
+    this._pointDragHandler = null;
+    this._isPanning = false;
+    this._panStartPos = null;
+    this._isDragging = false; // Track if user is dragging a shape/point
   }
 
   _hueFromId(id) {
@@ -49,7 +56,12 @@ class OSDViewer {
       // use CDN or your local prefix for icons
       prefixUrl: '/static/images/osd/',
       showNavigationControl: true,
-      gestureSettingsMouse: { clickToZoom: false },
+      gestureSettingsMouse: {
+        clickToZoom: false,
+        scrollToZoom: true,
+        pinchToZoom: false
+      },
+      mouseNavEnabled: false,  // Completely disable default mouse navigation
       zoomPerClick: 1.2,
       zoomPerScroll: 1.1,
       visibilityRatio: 1.0,
@@ -70,8 +82,18 @@ class OSDViewer {
     // Reanchor overlay on size changes
     this.viewer.addHandler('resize', () => this._anchorSvgToImage());
 
+    // Re-render point handles on zoom to keep them visible
+    this.viewer.addHandler('zoom', () => {
+      if (this._selectedPoint) {
+        this._renderPointHandles();
+      }
+    });
+
     // Bind click detection once after viewer exists
     this._bindCanvasClick();
+
+    // Enable middle-button panning
+    this._bindMiddleButtonPan();
   }
 
     styleForRegion(type, region) {
@@ -200,6 +222,11 @@ class OSDViewer {
     // Ensure current toggles are respected immediately
     this._applyToggleVisibility();
     this._ensureLineDelegation();
+
+    // Re-render point handles if a shape is selected
+    if (this._selectedPoint) {
+      this._renderPointHandles();
+    }
   }
 
   setSelection({ regionId = null, lineId = null } = {}) {
@@ -212,6 +239,18 @@ class OSDViewer {
       this.gLines.querySelectorAll('.line').forEach((el) => {
         el.classList.toggle('selected', lineId && el.dataset.lineId === lineId);
       });
+    }
+
+    // Update point handles for selected shape
+    if (regionId) {
+      this._selectedPoint = { type: 'region', id: regionId };
+      this._renderPointHandles();
+    } else if (lineId) {
+      this._selectedPoint = { type: 'line', id: lineId, isBaseline: false };
+      this._renderPointHandles();
+    } else {
+      this._selectedPoint = null;
+      this._renderPointHandles();
     }
   }
 
@@ -306,6 +345,12 @@ class OSDViewer {
     if (!this._lineClickHandler) return;
     this.gLines.style.pointerEvents = 'auto';
     this.gLines.addEventListener('click', (ev) => {
+      // Skip if we were dragging
+      if (this._isDragging) {
+        console.debug('[OSDViewer] skipping SVG line click - was dragging');
+        this._isDragging = false;
+        return;
+      }
       const target = ev.target;
       if (!target) return;
       const lid = target.dataset ? target.dataset.lineId : null;
@@ -336,6 +381,12 @@ class OSDViewer {
       }
     });
     this.viewer.addHandler('canvas-click', (ev) => {
+      // Skip click handlers if we were dragging
+      if (this._isDragging) {
+        console.debug('[OSDViewer] skipping click - was dragging');
+        this._isDragging = false;
+        return;
+      }
       if (ev.originalEvent && ev.originalEvent.defaultPrevented) return;
       const viewportPt = this.viewer.viewport.pointFromPixel(ev.position);
       const imgPt = this.viewer.viewport.viewportToImageCoordinates(viewportPt);
@@ -474,6 +525,119 @@ class OSDViewer {
 
   setPanLock(flag) {
     this._lockPan = !!flag;
+  }
+
+  setDragging(flag) {
+    this._isDragging = !!flag;
+  }
+
+  _bindMiddleButtonPan() {
+    if (!this.viewer || !this._mountedEl) return;
+
+    // Use DOM events for middle-button panning
+    this._mountedEl.addEventListener('mousedown', (e) => {
+      if (e.button === 1) { // Middle button
+        e.preventDefault();
+        this._isPanning = true;
+        const rect = this._mountedEl.getBoundingClientRect();
+        const viewportPoint = this.viewer.viewport.pointFromPixel(
+          new OpenSeadragon.Point(e.clientX - rect.left, e.clientY - rect.top)
+        );
+        this._panStartPos = viewportPoint;
+      }
+    });
+
+    this._mountedEl.addEventListener('mousemove', (e) => {
+      if (this._isPanning) {
+        e.preventDefault();
+        const rect = this._mountedEl.getBoundingClientRect();
+        const currentViewportPoint = this.viewer.viewport.pointFromPixel(
+          new OpenSeadragon.Point(e.clientX - rect.left, e.clientY - rect.top)
+        );
+        const delta = this._panStartPos.minus(currentViewportPoint);
+        this.viewer.viewport.panBy(delta);
+        this._panStartPos = currentViewportPoint;
+      }
+    });
+
+    const endPan = (e) => {
+      if (e.button === 1 || !e.buttons) {
+        this._isPanning = false;
+        this._panStartPos = null;
+      }
+    };
+
+    this._mountedEl.addEventListener('mouseup', endPan);
+    this._mountedEl.addEventListener('mouseleave', () => {
+      this._isPanning = false;
+      this._panStartPos = null;
+    });
+
+    // Prevent context menu on middle-click
+    this._mountedEl.addEventListener('contextmenu', (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+      }
+    });
+
+    console.debug('[OSDViewer] middle-button pan enabled');
+  }
+
+  onPointDrag(handler) {
+    this._pointDragHandler = handler;
+  }
+
+  setSelectedPoint(selection) {
+    this._selectedPoint = selection; // {type, id, pointIndex, isBaseline}
+    this._renderPointHandles();
+  }
+
+  _renderPointHandles() {
+    // Remove existing handles
+    const existing = this.svg.querySelectorAll('.point-handle');
+    existing.forEach(el => el.remove());
+
+    if (!this._selectedPoint) return;
+
+    const { type, id, isBaseline } = this._selectedPoint;
+    let points = null;
+
+    if (type === 'region') {
+      const region = this._regions.find(r => r.id === id);
+      if (region && region.points) points = region.points;
+    } else if (type === 'line') {
+      const line = this._lines.find(l => l.id === id);
+      if (line) {
+        points = isBaseline ? line.baseline : line.points;
+      }
+    }
+
+    if (!points || !points.length) return;
+
+    // Get current zoom level to scale handle size
+    const zoom = this.viewer && this.viewer.viewport ? this.viewer.viewport.getZoom() : 1;
+    const baseRadius = 6;
+    const radius = baseRadius / (zoom * 0.5); // Scale inversely with zoom
+
+    // Create draggable circles for each point
+    points.forEach(([x, y], idx) => {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('class', 'point-handle');
+      circle.setAttribute('cx', x);
+      circle.setAttribute('cy', y);
+      circle.setAttribute('r', Math.max(3, radius));
+      circle.setAttribute('fill', '#ff5050');
+      circle.setAttribute('stroke', '#fff');
+      circle.setAttribute('stroke-width', Math.max(1, radius * 0.25));
+      circle.style.cursor = 'move';
+      circle.style.pointerEvents = 'auto';
+      circle.dataset.pointIndex = idx;
+      circle.dataset.shapeType = type;
+      circle.dataset.shapeId = id;
+      circle.dataset.isBaseline = isBaseline ? 'true' : 'false';
+
+      this.svg.appendChild(circle);
+    });
   }
 }
 
