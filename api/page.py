@@ -666,8 +666,17 @@ def add_or_update_line():
     if not region_obj:
         abort(404, f"Region not found: {region_id}")
 
+    # Collect ALL line IDs from ALL regions on the page to ensure global uniqueness
+    all_regions = list(_iter_all_regions(page_obj))
+    existing_ids = set()
+    for r in all_regions:
+        region_lines = getattr(r, "get_TextLine", lambda: [])() or getattr(r, "TextLine", []) or []
+        for ln in region_lines:
+            lid = getattr(ln, "id", "")
+            if lid:
+                existing_ids.add(lid)
+
     lines = getattr(region_obj, "get_TextLine", lambda: [])() or getattr(region_obj, "TextLine", []) or []
-    existing_ids = {getattr(l, "id", "") for l in lines if getattr(l, "id", "")}
 
     target_line = None
     if l_id:

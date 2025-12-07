@@ -591,6 +591,8 @@ $(function () {
     // Don't select lines when in drawing mode
     if (drawMode !== 'select') return;
     const line = payload.line || payload;
+    console.log('[main] Line clicked:', line);
+    console.log('[main] All currentLines:', currentLines.map(l => ({ id: l.id, region_id: l.region_id })));
     selectedLineId = line.id || null;
     selectedRegionId = line.region_id || null;
     if (viewer.setSelection) viewer.setSelection({ lineId: selectedLineId });
@@ -884,7 +886,9 @@ $(function () {
       contentType: 'application/json',
       data: JSON.stringify(payload)
     }).done(function (resp) {
+      console.log('[main] Line created, backend response:', resp.line);
       currentLines.push(resp.line);
+      console.log('[main] currentLines now has', currentLines.length, 'lines. IDs:', currentLines.map(l => l.id));
       viewer.setOverlays(currentRegions, currentLines);
       setPendingChanges(true);
     }).fail(function (xhr) {
