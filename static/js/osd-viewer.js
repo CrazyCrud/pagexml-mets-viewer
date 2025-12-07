@@ -371,6 +371,7 @@ class OSDViewer {
   _bindCanvasClick() {
     if (!this.viewer || this._canvasClickBound) return;
     this._canvasClickBound = true;
+
     this.viewer.addHandler('canvas-drag', (ev) => {
       if (this._lockPan) {
         ev.preventDefaultAction = true;
@@ -380,55 +381,71 @@ class OSDViewer {
         }
       }
     });
-    this.viewer.addHandler('canvas-click', (ev) => {
+
+    // Use direct DOM click handler instead of OpenSeadragon events
+    // This is more reliable when mouseNavEnabled is disabled
+    this._mountedEl.addEventListener('click', (e) => {
+      console.debug('[OSDViewer] DOM click event fired, button:', e.button, '_isDragging:', this._isDragging);
+
+      // Only handle left button clicks
+      if (e.button !== 0) return;
+
       // Skip click handlers if we were dragging
       if (this._isDragging) {
         console.debug('[OSDViewer] skipping click - was dragging');
         this._isDragging = false;
         return;
       }
-      if (ev.originalEvent && ev.originalEvent.defaultPrevented) return;
-      const viewportPt = this.viewer.viewport.pointFromPixel(ev.position);
-      const imgPt = this.viewer.viewport.viewportToImageCoordinates(viewportPt);
 
-      // General canvas click callback (used for drawing)
-      if (this._canvasClickHandler) {
-        this._canvasClickHandler({
-          image: { x: imgPt.x, y: imgPt.y },
-          viewport: { x: viewportPt.x, y: viewportPt.y },
-          pixel: { x: ev.position.x, y: ev.position.y }
-        });
+      // Check if click was on SVG elements (regions/lines) - let their handlers deal with it
+      if (e.target.closest('.region') || e.target.closest('.line') || e.target.closest('.base') || e.target.closest('.point-handle')) {
+        console.debug('[OSDViewer] click on SVG element, ignoring');
+        return;
       }
 
+      const rect = this._mountedEl.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const webPoint = new OpenSeadragon.Point(px, py);
+      const viewportPt = this.viewer.viewport.pointFromPixel(webPoint);
+      const imgPt = this.viewer.viewport.viewportToImageCoordinates(viewportPt);
+
+      let hitSomething = false;
+
       // Region hit detection
-      if (ev.quick && this._regionClickHandler && this.showRegions) {
+      if (this._regionClickHandler && this.showRegions) {
         const hitRegion = this._hitTestRegion(imgPt);
         if (hitRegion) {
-          ev.preventDefaultAction = true;
-          if (ev.originalEvent) {
-            ev.originalEvent.preventDefault();
-            ev.originalEvent.stopPropagation();
-          }
-          this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: ev.position.x, y: ev.position.y } } });
+          hitSomething = true;
+          this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: px, y: py } } });
           return;
         }
       }
 
       // Line hit detection if enabled
-      if (ev.quick && this._lineClickHandler && this.showLines) {
+      if (!hitSomething && this._lineClickHandler && this.showLines) {
         const hit = this._hitTestLine(imgPt);
-        if (!hit) return;
-
-        ev.preventDefaultAction = true;
-        if (ev.originalEvent) {
-          ev.originalEvent.preventDefault();
-          ev.originalEvent.stopPropagation();
+        if (hit) {
+          hitSomething = true;
+          const payload = this._buildClickPayload(hit, webPoint);
+          console.debug('[OSDViewer] canvas line click', hit.id);
+          this._lineClickHandler(payload);
+          return;
         }
-        const payload = this._buildClickPayload(hit, ev.position);
-        console.debug('[OSDViewer] canvas line click', hit.id);
-        this._lineClickHandler(payload);
+      }
+
+      // General canvas click callback (used for drawing and deselection)
+      // Only fires if we didn't hit a region or line
+      console.debug('[OSDViewer] Calling canvas click handler, hitSomething:', hitSomething);
+      if (this._canvasClickHandler) {
+        this._canvasClickHandler({
+          image: { x: imgPt.x, y: imgPt.y },
+          viewport: { x: viewportPt.x, y: viewportPt.y },
+          pixel: { x: px, y: py }
+        });
       }
     });
+
     console.debug('[OSDViewer] canvas click handler bound');
   }
 

@@ -546,11 +546,22 @@ $(function () {
   $('#modeAddRegion').on('click', () => setMode('addRegion'));
   $('#modeAddLine').on('click', () => setMode('addLine'));
 
-  // Canvas clicks for drawing
+  // Canvas clicks for drawing and deselection
   if (viewer.onCanvasClick) {
     viewer.onCanvasClick((pt) => {
+      console.debug('[main] canvas click callback fired, drawMode:', drawMode);
       if (!workspaceId || !currentPage) return;
-      if (drawMode === 'select') return;
+
+      // In select mode, clicking empty canvas deselects
+      if (drawMode === 'select') {
+        console.debug('[main] deselecting shapes');
+        selectedRegionId = null;
+        selectedLineId = null;
+        if (viewer.setSelection) viewer.setSelection({});
+        return;
+      }
+
+      // In drawing modes, add points
       drawPoints.push([pt.image.x, pt.image.y]);
       if (viewer.setTempShape) viewer.setTempShape(drawPoints);
     });
