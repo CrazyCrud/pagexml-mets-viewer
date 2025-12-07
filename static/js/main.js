@@ -635,8 +635,19 @@ $(function () {
     const shapeType = $(this).data('shapeType');
     const shapeId = $(this).data('shapeId');
     const isBaseline = $(this).data('isBaseline') === 'true';
+
+    // Validate point index
+    if (isNaN(pointIndex) || pointIndex < 0) {
+      console.warn('[main] Invalid point index:', pointIndex);
+      return;
+    }
+
     const pt = eventToImage(e);
-    if (!pt) return;
+    if (!pt || !pt.img) {
+      console.warn('[main] Could not convert event to image coordinates');
+      return;
+    }
+
     dragState = {
       type: 'point',
       shapeType,
@@ -663,9 +674,17 @@ $(function () {
     if (!workspaceId || !currentPage) return;
     const isRegion = $(this).hasClass('region');
     const id = isRegion ? $(this).data('regionId') : $(this).data('lineId');
-    if (!id) return;
+    if (!id) {
+      console.warn('[main] Shape element has no ID');
+      return;
+    }
+
     const pt = eventToImage(e);
-    if (!pt) return;
+    if (!pt || !pt.img) {
+      console.warn('[main] Could not convert event to image coordinates');
+      return;
+    }
+
     dragState = { type: isRegion ? 'region' : 'line', id, lastImg: pt.img };
     dragMoved = false;
     selectedRegionId = isRegion ? id : null;
@@ -682,9 +701,20 @@ $(function () {
     if (!dragState) return;
     console.debug('[main] mousemove firing', dragState.type);
     const delta = imgDeltaFromScreen(e, dragState.lastImg);
-    if (!delta) return;
+    if (!delta || !delta.img) {
+      console.warn('[main] Could not compute image delta');
+      return;
+    }
+
     const dx = delta.dx;
     const dy = delta.dy;
+
+    // Validate delta values
+    if (!isFinite(dx) || !isFinite(dy)) {
+      console.warn('[main] Invalid delta values:', dx, dy);
+      return;
+    }
+
     if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
     dragMoved = true;
     dragState.lastImg = delta.img;
@@ -697,28 +727,57 @@ $(function () {
       const { shapeType, shapeId, pointIndex, isBaseline } = dragState;
       if (shapeType === 'region') {
         const reg = getRegionById(shapeId);
-        if (!reg || !reg.points || !reg.points[pointIndex]) return;
-        reg.points[pointIndex] = [reg.points[pointIndex][0] + dx, reg.points[pointIndex][1] + dy];
+        if (!reg || !reg.points || !Array.isArray(reg.points)) {
+          console.warn('[main] Region not found or has no points:', shapeId);
+          return;
+        }
+        if (pointIndex < 0 || pointIndex >= reg.points.length) {
+          console.warn('[main] Point index out of bounds:', pointIndex, 'for region', shapeId);
+          return;
+        }
+        const [x, y] = reg.points[pointIndex];
+        reg.points[pointIndex] = [x + dx, y + dy];
         viewer.setOverlays(currentRegions, currentLines);
       } else if (shapeType === 'line') {
         const ln = getLineById(shapeId);
-        if (!ln) return;
+        if (!ln) {
+          console.warn('[main] Line not found:', shapeId);
+          return;
+        }
         const points = isBaseline ? ln.baseline : ln.points;
-        if (!points || !points[pointIndex]) return;
-        points[pointIndex] = [points[pointIndex][0] + dx, points[pointIndex][1] + dy];
+        if (!points || !Array.isArray(points)) {
+          console.warn('[main] Line has no points array:', shapeId, isBaseline ? 'baseline' : 'points');
+          return;
+        }
+        if (pointIndex < 0 || pointIndex >= points.length) {
+          console.warn('[main] Point index out of bounds:', pointIndex, 'for line', shapeId);
+          return;
+        }
+        const [x, y] = points[pointIndex];
+        points[pointIndex] = [x + dx, y + dy];
         viewer.setOverlays(currentRegions, currentLines);
         viewer.setSelection({ lineId: ln.id });
       }
     } else if (dragState.type === 'region') {
       const reg = getRegionById(dragState.id);
-      if (!reg || !reg.points) return;
+      if (!reg || !reg.points || !Array.isArray(reg.points)) {
+        console.warn('[main] Region not found or has no points:', dragState.id);
+        return;
+      }
       reg.points = reg.points.map(([x, y]) => [x + dx, y + dy]);
       viewer.setOverlays(currentRegions, currentLines);
     } else if (dragState.type === 'line') {
       const ln = getLineById(dragState.id);
-      if (!ln) return;
-      if (ln.points) ln.points = ln.points.map(([x, y]) => [x + dx, y + dy]);
-      if (ln.baseline) ln.baseline = ln.baseline.map(([x, y]) => [x + dx, y + dy]);
+      if (!ln) {
+        console.warn('[main] Line not found:', dragState.id);
+        return;
+      }
+      if (ln.points && Array.isArray(ln.points)) {
+        ln.points = ln.points.map(([x, y]) => [x + dx, y + dy]);
+      }
+      if (ln.baseline && Array.isArray(ln.baseline)) {
+        ln.baseline = ln.baseline.map(([x, y]) => [x + dx, y + dy]);
+      }
       viewer.setOverlays(currentRegions, currentLines);
       viewer.setSelection({ lineId: ln.id });
     }
@@ -783,20 +842,55 @@ $(function () {
   }
 
   function eventToImage(ev) {
-    if (!viewer || !viewer.viewer) return null;
-    const rect = document.getElementById('osd').getBoundingClientRect();
+    if (!ev) {
+      console.warn('[main] No event provided to eventToImage');
+      return null;
+    }
+
+    if (!viewer || !viewer.viewer || !viewer.viewer.viewport) {
+      console.warn('[main] Viewer not initialized in eventToImage');
+      return null;
+    }
+
+    const osdEl = document.getElementById('osd');
+    if (!osdEl) {
+      console.warn('[main] OSD element not found in eventToImage');
+      return null;
+    }
+
+    const rect = osdEl.getBoundingClientRect();
     const px = ev.clientX - rect.left;
     const py = ev.clientY - rect.top;
     const vp = viewer.viewer.viewport.pointFromPixel(new OpenSeadragon.Point(px, py));
     const img = viewer.viewer.viewport.viewportToImageCoordinates(vp);
+
+    if (!img || typeof img.x !== 'number' || typeof img.y !== 'number') {
+      console.warn('[main] Invalid image coordinates in eventToImage');
+      return null;
+    }
+
     return { img, pixel: { x: px, y: py } };
   }
 
   function saveNewRegion(points) {
-    if (!points || points.length < 3) {
+    if (!points || !Array.isArray(points) || points.length < 3) {
       alert('Add at least 3 points for a region.');
       return;
     }
+
+    // Validate all points are valid coordinates
+    const hasInvalidPoint = points.some(pt => {
+      return !Array.isArray(pt) || pt.length < 2 ||
+             typeof pt[0] !== 'number' || typeof pt[1] !== 'number' ||
+             !isFinite(pt[0]) || !isFinite(pt[1]);
+    });
+
+    if (hasInvalidPoint) {
+      console.error('[main] Invalid point coordinates in region:', points);
+      alert('Invalid region coordinates detected.');
+      return;
+    }
+
     const payload = {
       workspace_id: workspaceId,
       path: currentPage,
@@ -808,9 +902,13 @@ $(function () {
       contentType: 'application/json',
       data: JSON.stringify(payload)
     }).done(function (resp) {
-      currentRegions.push(resp.region);
-      viewer.setOverlays(currentRegions, currentLines);
-      setPendingChanges(true);
+      if (resp && resp.region) {
+        currentRegions.push(resp.region);
+        viewer.setOverlays(currentRegions, currentLines);
+        setPendingChanges(true);
+      } else {
+        console.warn('[main] Unexpected response format:', resp);
+      }
     }).fail(function (xhr) {
       alert(`Failed to add region: ${xhr.responseText || xhr.status}`);
     });
@@ -838,8 +936,21 @@ $(function () {
   }
 
   function saveNewLine(points) {
-    if (!points || points.length < 2) {
+    if (!points || !Array.isArray(points) || points.length < 2) {
       alert('Add at least 2 points for a line.');
+      return;
+    }
+
+    // Validate all points are valid coordinates
+    const hasInvalidPoint = points.some(pt => {
+      return !Array.isArray(pt) || pt.length < 2 ||
+             typeof pt[0] !== 'number' || typeof pt[1] !== 'number' ||
+             !isFinite(pt[0]) || !isFinite(pt[1]);
+    });
+
+    if (hasInvalidPoint) {
+      console.error('[main] Invalid point coordinates in line:', points);
+      alert('Invalid line coordinates detected.');
       return;
     }
 
@@ -940,12 +1051,21 @@ $(function () {
   }
 
   function getPolygonArea(points) {
-    if (!points || points.length < 3) return 0;
+    if (!points || !Array.isArray(points) || points.length < 3) return 0;
     let area = 0;
     for (let i = 0; i < points.length; i++) {
       const j = (i + 1) % points.length;
-      area += points[i][0] * points[j][1];
-      area -= points[j][0] * points[i][1];
+      const pt_i = points[i];
+      const pt_j = points[j];
+
+      // Validate points exist and have coordinates
+      if (!pt_i || !pt_j || pt_i.length < 2 || pt_j.length < 2) {
+        console.warn('[main] Invalid point in polygon area calculation at index', i);
+        continue;
+      }
+
+      area += pt_i[0] * pt_j[1];
+      area -= pt_j[0] * pt_i[1];
     }
     return Math.abs(area / 2);
   }
@@ -1132,12 +1252,34 @@ $(function () {
   });
 
   function imgDeltaFromScreen(ev, lastImg) {
-    const rect = document.getElementById('osd').getBoundingClientRect();
+    if (!ev || !lastImg) {
+      console.warn('[main] Missing event or lastImg in imgDeltaFromScreen');
+      return null;
+    }
+
+    const osdEl = document.getElementById('osd');
+    if (!osdEl) {
+      console.warn('[main] OSD element not found');
+      return null;
+    }
+
+    const rect = osdEl.getBoundingClientRect();
     const px = ev.clientX - rect.left;
     const py = ev.clientY - rect.top;
-    if (!viewer.viewer || !viewer.viewer.viewport) return null;
+
+    if (!viewer.viewer || !viewer.viewer.viewport) {
+      console.warn('[main] Viewer or viewport not available');
+      return null;
+    }
+
     const vp = viewer.viewer.viewport.pointFromPixel(new OpenSeadragon.Point(px, py));
     const img = viewer.viewer.viewport.viewportToImageCoordinates(vp);
+
+    if (!img || typeof img.x !== 'number' || typeof img.y !== 'number') {
+      console.warn('[main] Invalid image coordinates');
+      return null;
+    }
+
     return { img, dx: img.x - lastImg.x, dy: img.y - lastImg.y };
   }
 

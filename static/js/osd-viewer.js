@@ -355,7 +355,11 @@ class OSDViewer {
       const target = ev.target;
       if (!target) return;
       const lid = target.dataset ? target.dataset.lineId : null;
-      const line = this._lines.find(l => l.id === lid) || (lid ? { id: lid, text: '' } : null);
+      if (!lid) {
+        console.debug('[OSDViewer] click with no line id');
+        return;
+      }
+      const line = this._lines.find(l => l.id === lid);
       if (line) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -363,7 +367,7 @@ class OSDViewer {
         console.debug('[OSDViewer] line click', lid, line);
         this._lineClickHandler(payload);
       } else {
-        console.debug('[OSDViewer] click with no matching line id', lid);
+        console.warn('[OSDViewer] Line ID found but no matching line in array:', lid);
       }
     });
     console.debug('[OSDViewer] line click delegation attached');
@@ -524,12 +528,16 @@ class OSDViewer {
   _distToSegmentSq(p, a, b) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
-    if (dx === 0 && dy === 0) {
+    const lenSq = dx * dx + dy * dy;
+
+    // Degenerate segment (point)
+    if (lenSq < 1e-10) {
       const px = p.x - a.x;
       const py = p.y - a.y;
       return px * px + py * py;
     }
-    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+
+    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
     const clamped = Math.max(0, Math.min(1, t));
     const projX = a.x + clamped * dx;
     const projY = a.y + clamped * dy;
@@ -633,6 +641,7 @@ class OSDViewer {
 
   _renderPointHandles() {
     // Remove existing handles
+    if (!this.svg) return;
     const existing = this.svg.querySelectorAll('.point-handle');
     existing.forEach(el => el.remove());
 
@@ -656,10 +665,17 @@ class OSDViewer {
     // Get current zoom level to scale handle size
     const zoom = this.viewer && this.viewer.viewport ? this.viewer.viewport.getZoom() : 1;
     const baseRadius = 6;
-    const radius = baseRadius / (zoom * 0.5); // Scale inversely with zoom
+    const safeZoom = Math.max(zoom * 0.5, 0.1); // Prevent division by zero or very small numbers
+    const radius = baseRadius / safeZoom; // Scale inversely with zoom
 
     // Create draggable circles for each point
     points.forEach(([x, y], idx) => {
+      // Validate point coordinates
+      if (typeof x !== 'number' || typeof y !== 'number' || !isFinite(x) || !isFinite(y)) {
+        console.warn('[OSDViewer] Invalid point coordinates:', x, y, 'at index', idx);
+        return;
+      }
+
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('class', 'point-handle');
       circle.setAttribute('cx', x);
