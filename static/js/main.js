@@ -829,21 +829,44 @@ $(function () {
       alert('Add at least 2 points for a line.');
       return;
     }
-    const targetRegion = selectedRegionId ? getRegionById(selectedRegionId) : currentRegions[0];
+
+    // Find which region should contain this line
+    let targetRegion = null;
+
+    // Option 1: User has a region selected
+    if (selectedRegionId) {
+      targetRegion = getRegionById(selectedRegionId);
+    }
+
+    // Option 2: Find region that contains the line geometrically
+    if (!targetRegion) {
+      targetRegion = findContainingRegion(points);
+    }
+
+    // Option 3: No region contains it - create one automatically
+    if (!targetRegion) {
+      console.debug('[main] No region contains line, creating new region automatically');
+      createRegionForLine(points, (newRegion) => {
+        saveLineWithRegion(points, newRegion.id);
+      });
+      return;
+    }
+
+    console.debug('[main] Using region', targetRegion.id, 'for new line');
+    saveLineWithRegion(points, targetRegion.id);
+  }
+
+  function saveLineWithRegion(points, regionId) {
     const payload = {
       workspace_id: workspaceId,
       path: currentPage,
       line: {
-        region_id: targetRegion ? targetRegion.id : '',
+        region_id: regionId,
         points: points,
         baseline: [],
         text: ''
       }
     };
-    if (!payload.line.region_id) {
-      alert('Add a Text Region first before adding lines.');
-      return;
-    }
     $.ajax({
       url: '/api/page/line',
       type: 'POST',
@@ -855,6 +878,99 @@ $(function () {
       setPendingChanges(true);
     }).fail(function (xhr) {
       alert(`Failed to add line: ${xhr.responseText || xhr.status}`);
+    });
+  }
+
+  function findContainingRegion(linePoints) {
+    if (!currentRegions || !currentRegions.length) return null;
+
+    // Check each region to see if it contains the line
+    const candidates = currentRegions.filter(region => {
+      if (!region.points || region.points.length < 3) return false;
+      return isLineInsideRegion(linePoints, region.points);
+    });
+
+    if (candidates.length === 0) return null;
+
+    // If multiple regions contain it, pick the smallest one (most specific)
+    if (candidates.length > 1) {
+      return candidates.reduce((smallest, current) => {
+        return getPolygonArea(current.points) < getPolygonArea(smallest.points) ? current : smallest;
+      });
+    }
+
+    return candidates[0];
+  }
+
+  function isLineInsideRegion(linePoints, regionPoints) {
+    // Check if all line points are inside the region polygon
+    return linePoints.every(pt => pointInPolygon(pt, regionPoints));
+  }
+
+  function pointInPolygon(point, polygon) {
+    const x = point[0];
+    const y = point[1];
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i][0], yi = polygon[i][1];
+      const xj = polygon[j][0], yj = polygon[j][1];
+
+      const intersect = ((yi > y) !== (yj > y)) &&
+        (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi);
+      if (intersect) inside = !inside;
+    }
+
+    return inside;
+  }
+
+  function getPolygonArea(points) {
+    if (!points || points.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const j = (i + 1) % points.length;
+      area += points[i][0] * points[j][1];
+      area -= points[j][0] * points[i][1];
+    }
+    return Math.abs(area / 2);
+  }
+
+  function createRegionForLine(linePoints, callback) {
+    // Create a bounding box around the line with some padding
+    const padding = 50; // pixels - generous padding for text region
+    const xs = linePoints.map(p => p[0]);
+    const ys = linePoints.map(p => p[1]);
+    const minX = Math.min(...xs) - padding;
+    const maxX = Math.max(...xs) + padding;
+    const minY = Math.min(...ys) - padding;
+    const maxY = Math.max(...ys) + padding;
+
+    const regionPoints = [
+      [minX, minY],
+      [maxX, minY],
+      [maxX, maxY],
+      [minX, maxY]
+    ];
+
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      region: { type: 'TextRegion', points: regionPoints }
+    };
+
+    $.ajax({
+      url: '/api/page/region',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      currentRegions.push(resp.region);
+      viewer.setOverlays(currentRegions, currentLines);
+      setPendingChanges(true);
+      console.log('[main] Auto-created TextRegion', resp.region.id, 'for new TextLine');
+      callback(resp.region);
+    }).fail(function (xhr) {
+      alert(`Failed to create region: ${xhr.responseText || xhr.status}`);
     });
   }
 

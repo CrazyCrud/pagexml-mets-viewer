@@ -412,24 +412,24 @@ class OSDViewer {
 
       let hitSomething = false;
 
-      // Region hit detection
-      if (this._regionClickHandler && this.showRegions) {
-        const hitRegion = this._hitTestRegion(imgPt);
-        if (hitRegion) {
-          hitSomething = true;
-          this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: px, y: py } } });
-          return;
-        }
-      }
-
-      // Line hit detection if enabled
-      if (!hitSomething && this._lineClickHandler && this.showLines) {
+      // Line hit detection - check lines FIRST (they're on top visually)
+      if (this._lineClickHandler && this.showLines) {
         const hit = this._hitTestLine(imgPt);
         if (hit) {
           hitSomething = true;
           const payload = this._buildClickPayload(hit, webPoint);
           console.debug('[OSDViewer] canvas line click', hit.id);
           this._lineClickHandler(payload);
+          return;
+        }
+      }
+
+      // Region hit detection - check regions SECOND (they're underneath)
+      if (!hitSomething && this._regionClickHandler && this.showRegions) {
+        const hitRegion = this._hitTestRegion(imgPt);
+        if (hitRegion) {
+          hitSomething = true;
+          this._regionClickHandler({ region: hitRegion, click: { image: imgPt, pixel: { x: px, y: py } } });
           return;
         }
       }
