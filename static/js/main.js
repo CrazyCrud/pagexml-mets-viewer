@@ -23,6 +23,9 @@ $(function () {
   viewer.mount(document.getElementById('osd'));
   console.debug('[main] viewer mounted');
 
+  // Initialize Unicode picker (will be attached when popover is shown)
+  let unicodePicker = null;
+
   function setWs(id, label = null) {
     workspaceId = id;
     workspaceLabel = label || `Workspace ${id.slice(0, 8)}`;
@@ -1211,6 +1214,16 @@ $(function () {
     $('#linePopover').show();
     placePopover(click);
     console.debug('[main] showLinePopover', line, click);
+
+    // Attach Unicode picker to the input field
+    if (!unicodePicker) {
+      unicodePicker = new UnicodePicker();
+      unicodePicker.attach('#linePopoverInput', {
+        buttonText: '⊕ Unicode',
+        position: 'below'
+      });
+    }
+
     setTimeout(() => $('#linePopoverInput').trigger('focus'), 30);
   }
 

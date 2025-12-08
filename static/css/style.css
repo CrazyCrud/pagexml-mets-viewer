@@ -161,3 +161,102 @@
   fill: #4a90e222;
   stroke-dasharray: 4 4;
 }
+
+/* Unicode Picker Styles */
+.unicode-picker-dropdown {
+  position: fixed;
+  width: 600px;
+  height: 400px;
+  background: white;
+  border: 1px solid #dbdbdb;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.unicode-picker-header {
+  padding: 12px;
+  border-bottom: 1px solid #e5e5e5;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.unicode-picker-header input {
+  flex: 1;
+}
+
+.unicode-picker-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0; /* Critical for flexbox scrolling */
+}
+
+.unicode-picker-sidebar {
+  width: 200px;
+  border-right: 1px solid #e5e5e5;
+  overflow-y: auto;
+  background: #fafafa;
+  flex-shrink: 0; /* Prevent sidebar from shrinking */
+}
+
+.unicode-picker-category {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+
+.unicode-picker-category:hover {
+  background: #f0f4ff;
+}
+
+.unicode-picker-category.active {
+  background: #e8f0ff;
+  color: #3273dc;
+  font-weight: 500;
+}
+
+.unicode-picker-grid-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
+  padding: 12px;
+  min-width: 0; /* Allow flex item to shrink below content size */
+}
+
+.unicode-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 4px;
+}
+
+.unicode-char-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #e5e5e5;
+  background: white;
+  border-radius: 4px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.unicode-char-btn:hover {
+  background: #f0f4ff;
+  border-color: #3273dc;
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(50, 115, 220, 0.2);
+  z-index: 1;
+}
+
+.unicode-char-btn:active {
+  transform: scale(0.95);
+}
