@@ -167,6 +167,7 @@
   position: fixed;
   width: 600px;
   height: 400px;
+  max-height: 400px; /* Enforce maximum height */
   background: white;
   border: 1px solid #dbdbdb;
   border-radius: 6px;
@@ -174,6 +175,7 @@
   z-index: 1000;
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* Prevent container from expanding */
 }
 
 .unicode-picker-header {
@@ -182,6 +184,7 @@
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .unicode-picker-header input {
@@ -197,8 +200,10 @@
 
 .unicode-picker-sidebar {
   width: 200px;
+  max-height: 100%; /* Constrain to parent height */
   border-right: 1px solid #e5e5e5;
   overflow-y: auto;
+  overflow-x: hidden;
   background: #fafafa;
   flex-shrink: 0; /* Prevent sidebar from shrinking */
 }
@@ -223,10 +228,12 @@
 
 .unicode-picker-grid-container {
   flex: 1;
+  max-height: 100%; /* Constrain to parent height */
   overflow-y: auto;
   overflow-x: hidden; /* Prevent horizontal scrolling */
   padding: 12px;
   min-width: 0; /* Allow flex item to shrink below content size */
+  min-height: 0; /* Allow scrolling in flex container */
 }
 
 .unicode-picker-grid {
