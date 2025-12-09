@@ -566,6 +566,11 @@ $(function () {
         selectedRegionId = null;
         selectedLineId = null;
         if (viewer.setSelection) viewer.setSelection({});
+
+        // Close popup if open and not clicking on a line
+        if (lineModalState.lineId) {
+          hideLineModal();
+        }
         return;
       }
 
@@ -1183,6 +1188,28 @@ $(function () {
       panel.slideUp(150);
     } else {
       panel.slideDown(150);
+    }
+  });
+
+  // Close popup when clicking outside of it
+  $(document).on('click', function(e) {
+    const $popover = $('#linePopover');
+    const $target = $(e.target);
+
+    // If popup is open and click is outside of it, close the popup
+    // But don't close if clicking on a line element (to allow opening new popups)
+    if ($popover.is(':visible') && !$target.closest('#linePopover').length) {
+      // Check if the click is inside the OSD viewer
+      const osdEl = document.getElementById('osd');
+      if (osdEl && osdEl.contains(e.target)) {
+        // If inside OSD viewer, only close if not clicking on a line element
+        if (!$target.closest('#osd svg .line').length) {
+          hideLineModal();
+        }
+      } else {
+        // If outside OSD viewer, close the popup
+        hideLineModal();
+      }
     }
   });
 
