@@ -396,14 +396,42 @@ class UnicodePicker {
       return;
     }
 
-    grid.innerHTML = chars.map(ch => `
-      <button type="button"
-              class="unicode-char-btn"
-              data-char="${ch.char}"
-              title="${ch.hex} - ${ch.name}">
-        ${ch.char}
-      </button>
-    `).join('');
+    grid.innerHTML = chars.map(ch => {
+      // Check if character is in Private Use Area
+      const isPUA = ch.code >= 0xE000 && ch.code <= 0xF8FF;
+      const puaClass = isPUA ? ' pua-char' : '';
+
+      // Get custom label if available
+      const displayLabel = this.getPUALabel(ch.code, ch.hex, ch.name);
+
+      return `
+        <button type="button"
+                class="unicode-char-btn${puaClass}"
+                data-char="${ch.char}"
+                title="${displayLabel}">
+          ${ch.char}
+        </button>
+      `;
+    }).join('');
+  }
+
+  /**
+   * Get custom label for PUA characters
+   * Override this with your own mappings when you have your font
+   */
+  getPUALabel(code, hex, defaultName) {
+    // Check for global PUA configuration (from pua-config.js)
+    if (window.PUA_CONFIG && window.PUA_CONFIG.labels && window.PUA_CONFIG.labels[code]) {
+      return `${hex} - ${window.PUA_CONFIG.labels[code]}`;
+    }
+
+    // Fall back to options-provided labels
+    const puaLabels = this.options.puaLabels || {};
+    if (puaLabels[code]) {
+      return `${hex} - ${puaLabels[code]}`;
+    }
+
+    return `${hex} - ${defaultName}`;
   }
 
   /**

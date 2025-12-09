@@ -267,3 +267,27 @@
 .unicode-char-btn:active {
   transform: scale(0.95);
 }
+
+/* Private Use Area (PUA) Custom Font Support */
+/* When you have your custom font, add it here: */
+/*
+@font-face {
+  font-family: 'HistoricalWeather';
+  src: url('../fonts/your-font-name.woff2') format('woff2'),
+       url('../fonts/your-font-name.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+*/
+
+/* Apply custom font to PUA characters (U+E000 to U+F8FF) */
+.unicode-char-btn.pua-char {
+  font-family: 'HistoricalWeather', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: 20px; /* Slightly larger for custom symbols */
+}
+
+/* Style for PUA characters in text input/display */
+.textline-input.pua-enabled,
+.transcription-text.pua-enabled {
+  font-family: 'HistoricalWeather', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
