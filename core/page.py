@@ -357,12 +357,35 @@ def _collect_regions(pcgts, page_coords) -> List[Dict]:
         except Exception:
             conf = None
 
-        out.append({
+        # Extract rowIndex and columnIndex from Roles/TableCellRole
+        row_index = None
+        col_index = None
+        try:
+            roles = getattr(reg, "get_Roles", lambda: None)()
+            if roles:
+                table_cell_role = getattr(roles, "get_TableCellRole", lambda: None)()
+                if table_cell_role:
+                    row_val = getattr(table_cell_role, "get_rowIndex", lambda: None)()
+                    col_val = getattr(table_cell_role, "get_columnIndex", lambda: None)()
+                    if row_val is not None:
+                        row_index = int(row_val)
+                    if col_val is not None:
+                        col_index = int(col_val)
+        except Exception:
+            pass
+
+        region_dict = {
             "id": rid,
             "type": rtype,
             "points": pts_t,
             "conf": conf,
-        })
+        }
+        if row_index is not None:
+            region_dict["rowIndex"] = row_index
+        if col_index is not None:
+            region_dict["colIndex"] = col_index
+
+        out.append(region_dict)
 
     return out
 

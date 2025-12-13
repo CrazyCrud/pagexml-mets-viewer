@@ -13,7 +13,7 @@ from core.page import (
     _inject_page_namespace,
     PAGE_NS_FALLBACK,
 )
-from ocrd_models.ocrd_page import TextEquivType, TextRegionType, TableRegionType, TextLineType, CoordsType, BaselineType
+from ocrd_models.ocrd_page import TextEquivType, TextRegionType, TableRegionType, TextLineType, CoordsType, BaselineType, RolesType, TableCellRoleType
 from core.db import record_workspace
 
 
@@ -563,7 +563,7 @@ def _generate_id(prefix: str, existing: set) -> str:
 def add_or_update_region():
     """
     Add or update a region polygon.
-    JSON: {workspace_id, path, region:{id?, type, points:[[x,y],...]}}
+    JSON: {workspace_id, path, region:{id?, type, points:[[x,y],...], rowIndex?, colIndex?}}
     """
     payload = request.get_json(silent=True) or {}
     ws_id = (payload.get("workspace_id") or "").strip()
@@ -572,6 +572,8 @@ def add_or_update_region():
     r_type = (region.get("type") or "TextRegion").strip()
     r_points = region.get("points") or []
     r_id = (region.get("id") or "").strip()
+    r_row_index = region.get("rowIndex")
+    r_col_index = region.get("colIndex")
 
     if not ws_id or not rel:
         abort(400, "workspace_id and path are required")
@@ -616,11 +618,53 @@ def add_or_update_region():
         r_id = _generate_id("r", existing_ids)
         reg = _ensure_region(page_obj, r_id, r_type, r_points)
 
+    # Update or create Roles/TableCellRole with rowIndex and columnIndex
+    if r_row_index is not None or r_col_index is not None:
+        try:
+            # Get or create Roles
+            roles = getattr(reg, "get_Roles", lambda: None)()
+            if not roles:
+                roles = RolesType()
+                try:
+                    reg.set_Roles(roles)
+                except Exception:
+                    reg.Roles = roles
+
+            # Get or create TableCellRole
+            table_cell_role = getattr(roles, "get_TableCellRole", lambda: None)()
+            if not table_cell_role:
+                table_cell_role = TableCellRoleType()
+                try:
+                    roles.set_TableCellRole(table_cell_role)
+                except Exception:
+                    roles.TableCellRole = table_cell_role
+
+            # Set rowIndex and columnIndex
+            if r_row_index is not None:
+                try:
+                    table_cell_role.set_rowIndex(int(r_row_index))
+                except Exception:
+                    table_cell_role.rowIndex = int(r_row_index)
+
+            if r_col_index is not None:
+                try:
+                    table_cell_role.set_columnIndex(int(r_col_index))
+                except Exception:
+                    table_cell_role.columnIndex = int(r_col_index)
+        except Exception as e:
+            print(f"Warning: Failed to set table cell roles: {e}")
+
     xml_out = _serialize_pcgts(pcgts)
     page_xml.write_text(xml_out, encoding="utf-8")
     record_workspace(ws_id)
 
-    return jsonify({"ok": True, "region": {"id": r_id, "type": r_type, "points": r_points}})
+    response_region = {"id": r_id, "type": r_type, "points": r_points}
+    if r_row_index is not None:
+        response_region["rowIndex"] = r_row_index
+    if r_col_index is not None:
+        response_region["colIndex"] = r_col_index
+
+    return jsonify({"ok": True, "region": response_region})
 
 
 @bp_page.post("/page/line")

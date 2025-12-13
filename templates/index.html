@@ -261,6 +261,39 @@
         </div>
       </div>
 
+      <div id="regionPopover" class="line-popover box" style="display:none;">
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-2">
+          <div>
+            <p class="is-size-6 has-text-weight-semibold" id="regionPopoverTitle">Edit region</p>
+            <p class="help mb-0" id="regionPopoverLabel">TextRegion</p>
+          </div>
+          <button class="delete" aria-label="close" id="regionPopoverClose"></button>
+        </div>
+        <div class="columns">
+          <div class="column">
+            <div class="field">
+              <label class="label is-size-7">Row Index</label>
+              <div class="control">
+                <input class="input" type="number" id="regionPopoverRowIndex" placeholder="Row index" min="0">
+              </div>
+            </div>
+          </div>
+          <div class="column">
+            <div class="field">
+              <label class="label is-size-7">Column Index</label>
+              <div class="control">
+                <input class="input" type="number" id="regionPopoverColIndex" placeholder="Column index" min="0">
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="help" id="regionPopoverStatus"></p>
+        <div class="buttons mt-2">
+          <button class="button is-success is-small" id="regionPopoverSave">Save</button>
+          <button class="button is-light is-small" id="regionPopoverCancel">Cancel</button>
+        </div>
+      </div>
+
       <div class="field is-grouped is-grouped-multiline mt-3">
         <div class="control">
           <label class="checkbox"><input type="checkbox" id="cbRegions" checked> Show regions</label>

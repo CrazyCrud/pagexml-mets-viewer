@@ -582,13 +582,16 @@ $(function () {
 
   // Region selection
   if (viewer.onRegionClick) {
-    viewer.onRegionClick(({ region }) => {
+    viewer.onRegionClick((payload) => {
+      const region = payload.region || payload;
       if (!region) return;
       // Don't select regions when in drawing mode
       if (drawMode !== 'select') return;
       selectedRegionId = region.id || null;
       selectedLineId = null;
       if (viewer.setSelection) viewer.setSelection({ regionId: selectedRegionId });
+      // Show region modal for editing rowIndex/colIndex
+      showRegionModal(region, payload.click || null);
     });
   }
 
@@ -1221,8 +1224,8 @@ $(function () {
   });
 
   // --- Line modal helpers ---
-  function placePopover(click) {
-    const $pop = $('#linePopover');
+  function placePopover(click, popoverSelector) {
+    const $pop = $(popoverSelector || '#linePopover');
     const osdRect = document.getElementById('osd').getBoundingClientRect();
     const width = $pop.outerWidth() || 320;
     const height = $pop.outerHeight() || 180;
@@ -1350,6 +1353,90 @@ $(function () {
       $status.text(errorMsg).removeClass('is-success is-info').addClass('is-danger');
     }).always(function () {
       $btn.prop('disabled', false).removeClass('is-loading');
+    });
+  });
+
+  // --- Region modal helpers ---
+  let regionModalState = { regionId: null };
+
+  function showRegionModal(region, click) {
+    console.debug('[main] showRegionModal called with region:', region, 'click:', click);
+    regionModalState = { regionId: region.id };
+    $('#regionPopoverTitle').text(`${region.type || 'Region'} ${region.id || ''}`.trim());
+    $('#regionPopoverLabel').text(`Type: ${region.type || 'TextRegion'}`);
+    $('#regionPopoverRowIndex').val(region.rowIndex !== undefined && region.rowIndex !== null ? region.rowIndex : '');
+    $('#regionPopoverColIndex').val(region.colIndex !== undefined && region.colIndex !== null ? region.colIndex : '');
+    $('#regionPopoverStatus').text('').removeClass('is-danger is-success');
+
+    const $popover = $('#regionPopover');
+    console.debug('[main] Popover element:', $popover.length, 'Display before show:', $popover.css('display'));
+    $popover.show();
+    console.debug('[main] Display after show:', $popover.css('display'));
+
+    placePopover(click, '#regionPopover');
+    console.debug('[main] Popover positioned');
+
+    setTimeout(() => $('#regionPopoverRowIndex').trigger('focus'), 30);
+  }
+
+  function hideRegionModal() {
+    $('#regionPopover').hide();
+    regionModalState = { regionId: null };
+  }
+
+  $('#regionPopoverClose, #regionPopoverCancel').on('click', hideRegionModal);
+
+  $('#regionPopoverSave').on('click', function () {
+    if (!workspaceId || !currentPage || !regionModalState.regionId) {
+      $('#regionPopoverStatus').text('Open a PAGE and select a region first.').addClass('is-danger');
+      return;
+    }
+    const rowIndex = $('#regionPopoverRowIndex').val();
+    const colIndex = $('#regionPopoverColIndex').val();
+
+    // Find the region in currentRegions
+    const region = currentRegions.find(r => r.id === regionModalState.regionId);
+    if (!region) {
+      $('#regionPopoverStatus').text('Region not found in current data.').addClass('is-danger');
+      return;
+    }
+
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      region: {
+        id: region.id,
+        type: region.type || 'TextRegion',
+        points: region.points,
+        rowIndex: rowIndex !== '' ? parseInt(rowIndex, 10) : null,
+        colIndex: colIndex !== '' ? parseInt(colIndex, 10) : null
+      }
+    };
+
+    $.ajax({
+      url: '/api/page/region',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload)
+    }).done(function (resp) {
+      $('#regionPopoverStatus').text(`Saved region ${regionModalState.regionId}.`).removeClass('is-danger').addClass('is-success');
+      // Update local cache
+      currentRegions = currentRegions.map(r => {
+        if (r.id === regionModalState.regionId) {
+          return {
+            ...r,
+            rowIndex: payload.region.rowIndex,
+            colIndex: payload.region.colIndex
+          };
+        }
+        return r;
+      });
+      viewer.setOverlays(currentRegions, currentLines);
+      fetchWorkspaceList();
+      setPendingChanges(true);
+      setTimeout(hideRegionModal, 400);
+    }).fail(function (xhr) {
+      $('#regionPopoverStatus').text(`Failed to save: ${xhr.responseText || xhr.status}`).removeClass('is-success').addClass('is-danger');
     });
   });
 
