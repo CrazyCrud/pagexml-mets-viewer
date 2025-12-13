@@ -674,6 +674,13 @@ $(function () {
   // Drag selection (move whole shape)
   $(document).on('mousedown', '#osd svg .region, #osd svg .line', function (e) {
     console.debug('[main] shape mousedown', e.button, $(this).attr('class'), 'drawMode:', drawMode);
+
+    // Only drag on left-click (button 0), ignore middle-click (button 1) and right-click (button 2)
+    if (e.button !== 0) {
+      console.debug('[main] ignoring non-left-click on shape - allowing event to propagate for panning');
+      return;
+    }
+
     if (drawMode !== 'select') {
       console.debug('[main] ignoring shape mousedown - not in select mode, allowing event to propagate');
       // Don't preventDefault/stopPropagation so the click can reach the canvas handler for drawing

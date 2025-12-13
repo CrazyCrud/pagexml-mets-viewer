@@ -584,6 +584,16 @@ class OSDViewer {
     // Use DOM events for middle-button panning
     this._mountedEl.addEventListener('mousedown', (e) => {
       if (e.button === 1) { // Middle button
+        // Check if we're clicking on an SVG element (region/line)
+        // If so, skip panning to avoid interfering with region dragging
+        if (e.target.tagName === 'polygon' ||
+            e.target.tagName === 'polyline' ||
+            e.target.closest('[data-region-id]') ||
+            e.target.closest('[data-line-id]')) {
+          // Don't start panning when middle-clicking on shapes
+          return;
+        }
+
         e.preventDefault();
         this._isPanning = true;
         const rect = this._mountedEl.getBoundingClientRect();
