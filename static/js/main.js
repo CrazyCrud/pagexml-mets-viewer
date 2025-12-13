@@ -1291,6 +1291,61 @@ $(function () {
     });
   });
 
+  // Auto-transcribe button handler
+  $('#linePopoverAutoTranscribe').on('click', function () {
+    if (!workspaceId || !currentPage || !lineModalState.lineId) {
+      $('#linePopoverStatus').text('Open a PAGE and select a line first.').addClass('is-danger');
+      return;
+    }
+
+    const $btn = $(this);
+    const $status = $('#linePopoverStatus');
+    const existingText = $('#linePopoverInput').val().trim();
+
+    // Disable button and show loading state
+    $btn.prop('disabled', true).addClass('is-loading');
+    $status.text('Calling LLM...').removeClass('is-danger is-success').addClass('is-info');
+
+    const payload = {
+      workspace_id: workspaceId,
+      path: currentPage,
+      line_id: lineModalState.lineId,
+      existing_text: existingText || undefined,
+      language: 'German'  // TODO: Make this configurable
+    };
+
+    $.ajax({
+      url: '/api/llm/transcribe',
+      type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload),
+      timeout: 120000  // 2 minutes timeout for LLM
+    }).done(function (resp) {
+      if (resp.ok && resp.transcription) {
+        $('#linePopoverInput').val(resp.transcription);
+        const mode = resp.mode === 'correct' ? 'corrected' : 'transcribed';
+        $status.text(`AI ${mode} the text successfully.`).removeClass('is-danger is-info').addClass('is-success');
+      } else {
+        $status.text('LLM returned empty result.').removeClass('is-success is-info').addClass('is-danger');
+      }
+    }).fail(function (xhr) {
+      let errorMsg = 'LLM transcription failed.';
+      if (xhr.status === 503) {
+        errorMsg = 'LLM service not available. Please start Ollama first.';
+      } else if (xhr.responseText) {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          errorMsg = err.message || xhr.responseText;
+        } catch (e) {
+          errorMsg = xhr.responseText;
+        }
+      }
+      $status.text(errorMsg).removeClass('is-success is-info').addClass('is-danger');
+    }).always(function () {
+      $btn.prop('disabled', false).removeClass('is-loading');
+    });
+  });
+
   function imgDeltaFromScreen(ev, lastImg) {
     if (!ev || !lastImg) {
       console.warn('[main] Missing event or lastImg in imgDeltaFromScreen');

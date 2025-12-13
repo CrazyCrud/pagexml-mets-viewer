@@ -1,0 +1,39 @@
+# Standalone Ollama service
+# Use this if you're running the PageXML Viewer outside Docker
+# but want Ollama in a container
+#
+# Usage:
+#   docker compose -f docker/ollama-standalone.yml up -d
+#
+# Then configure viewer to connect:
+#   export OLLAMA_BASE_URL=http://localhost:11434
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pagexml-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      # Persist models across container restarts
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  ollama_data:
+    driver: local

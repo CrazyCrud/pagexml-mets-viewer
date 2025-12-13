@@ -1,0 +1,17 @@
+# Docker Compose Override
+# This file is automatically merged with docker-compose.yml
+# Platform-specific settings go here
+#
+# For Linux, you can:
+# 1. Use this file to override OLLAMA_BASE_URL
+# 2. Or use docker-compose.linux.yml instead
+
+services:
+  viewer:
+    # Uncomment for Linux (auto-detects gateway IP):
+    # environment:
+    #   OLLAMA_BASE_URL: "http://172.17.0.1:11434"
+
+    # Or uncomment for Linux with extra_hosts:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

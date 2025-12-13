@@ -1,0 +1,27 @@
+# Docker Compose for Linux
+# Usage: docker compose -f docker-compose.linux.yml up --build
+
+services:
+  viewer:
+    build:
+      context: .
+    image: ocrd-page-mets-viewer:latest
+    network_mode: "host"  # Use host network on Linux
+    command: >
+      gunicorn "app:create_app()"
+        --bind 0.0.0.0:8000
+        --workers 1
+        --threads 4
+        --timeout 120
+        --reload
+        --log-level debug
+        --reload-extra-file templates
+        --reload-extra-file static
+    environment:
+      FLASK_ENV: "development"
+      # On host network, localhost works directly
+      OLLAMA_BASE_URL: "http://localhost:11434"
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./:/app:delegated
+      - ./data/workspaces:/app/data/workspaces

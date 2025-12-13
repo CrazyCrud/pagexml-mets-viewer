@@ -17,6 +17,13 @@ services:
         --reload-extra-file static
     environment:
       FLASK_ENV: "development"
+      # Point to Ollama on host machine
+      # Windows/Mac: host.docker.internal works
+      # Linux: Will use extra_hosts mapping below
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+    extra_hosts:
+      # Make host.docker.internal work on Linux too
+      - "host.docker.internal:host-gateway"
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./:/app:delegated

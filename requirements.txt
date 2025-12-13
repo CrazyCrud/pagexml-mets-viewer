@@ -3,3 +3,4 @@ gunicorn
 lxml
 ocrd
 Pillow
+requests
