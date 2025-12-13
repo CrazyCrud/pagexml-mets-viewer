@@ -26,6 +26,69 @@ $(function () {
   // Initialize Unicode picker (will be attached when popover is shown)
   let unicodePicker = null;
 
+  // ===== Undo/Redo Manager =====
+  const undoStack = [];
+  const redoStack = [];
+  const MAX_UNDO_STACK = 50;
+
+  function deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function updateUndoRedoButtons() {
+    $('#btnUndo').prop('disabled', undoStack.length === 0);
+    $('#btnRedo').prop('disabled', redoStack.length === 0);
+  }
+
+  function pushUndoAction(action) {
+    undoStack.push(action);
+    if (undoStack.length > MAX_UNDO_STACK) {
+      undoStack.shift(); // Remove oldest action
+    }
+    redoStack.length = 0; // Clear redo stack on new action
+    updateUndoRedoButtons();
+    console.debug('[undo] Pushed action:', action.type, 'Stack size:', undoStack.length);
+  }
+
+  function performUndo() {
+    if (undoStack.length === 0) return;
+
+    const action = undoStack.pop();
+    console.debug('[undo] Performing undo:', action.type);
+
+    // Execute the undo
+    action.undo();
+
+    // Push to redo stack
+    redoStack.push(action);
+    updateUndoRedoButtons();
+  }
+
+  function performRedo() {
+    if (redoStack.length === 0) return;
+
+    const action = redoStack.pop();
+    console.debug('[undo] Performing redo:', action.type);
+
+    // Execute the redo
+    action.redo();
+
+    // Push back to undo stack
+    undoStack.push(action);
+    updateUndoRedoButtons();
+  }
+
+  function clearUndoStack() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    updateUndoRedoButtons();
+    console.debug('[undo] Cleared undo/redo stacks');
+  }
+
+  // Undo/Redo button handlers
+  $('#btnUndo').on('click', performUndo);
+  $('#btnRedo').on('click', performRedo);
+
   function setWs(id, label = null) {
     workspaceId = id;
     workspaceLabel = label || `Workspace ${id.slice(0, 8)}`;
@@ -501,6 +564,7 @@ $(function () {
     drawPoints = [];
     if (viewer.clearTempShape) viewer.clearTempShape();
     setMode('select');
+    clearUndoStack(); // Clear undo history when changing pages
 
     $.getJSON('/api/page', { workspace_id: wsId, path: pageName })
       .done(function (data) {
@@ -921,9 +985,40 @@ $(function () {
       data: JSON.stringify(payload)
     }).done(function (resp) {
       if (resp && resp.region) {
-        currentRegions.push(resp.region);
+        const newRegion = resp.region;
+        currentRegions.push(newRegion);
         viewer.setOverlays(currentRegions, currentLines);
         setPendingChanges(true);
+
+        // Add undo action for region creation
+        pushUndoAction({
+          type: 'REGION_CREATE',
+          regionId: newRegion.id,
+          undo: () => {
+            console.debug('[undo] Undoing region create:', newRegion.id);
+            deleteRegion(newRegion.id);
+          },
+          redo: () => {
+            console.debug('[undo] Redoing region create:', newRegion.id);
+            const redoPayload = {
+              workspace_id: workspaceId,
+              path: currentPage,
+              region: newRegion
+            };
+            $.ajax({
+              url: '/api/page/region',
+              type: 'POST',
+              contentType: 'application/json',
+              data: JSON.stringify(redoPayload)
+            }).done(() => {
+              if (!currentRegions.find(r => r.id === newRegion.id)) {
+                currentRegions.push(newRegion);
+                viewer.setOverlays(currentRegions, currentLines);
+                setPendingChanges(true);
+              }
+            });
+          }
+        });
       } else {
         console.warn('[main] Unexpected response format:', resp);
       }
@@ -933,6 +1028,9 @@ $(function () {
   }
 
   function saveRegionUpdate(reg) {
+    // Save old state for undo
+    const oldRegion = deepClone(currentRegions.find(r => r.id === reg.id));
+
     const payload = {
       workspace_id: workspaceId,
       path: currentPage,
@@ -948,6 +1046,51 @@ $(function () {
       if (idx >= 0) currentRegions[idx] = { ...currentRegions[idx], ...resp.region };
       viewer.setOverlays(currentRegions, currentLines);
       setPendingChanges(true);
+
+      // Add undo action for region move
+      const newRegion = deepClone(currentRegions[idx]);
+      pushUndoAction({
+        type: 'REGION_MOVE',
+        regionId: reg.id,
+        undo: () => {
+          console.debug('[undo] Undoing region move:', reg.id);
+          const undoPayload = {
+            workspace_id: workspaceId,
+            path: currentPage,
+            region: oldRegion
+          };
+          $.ajax({
+            url: '/api/page/region',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(undoPayload)
+          }).done(() => {
+            const idx = currentRegions.findIndex(r => r.id === oldRegion.id);
+            if (idx >= 0) currentRegions[idx] = oldRegion;
+            viewer.setOverlays(currentRegions, currentLines);
+            setPendingChanges(true);
+          });
+        },
+        redo: () => {
+          console.debug('[undo] Redoing region move:', reg.id);
+          const redoPayload = {
+            workspace_id: workspaceId,
+            path: currentPage,
+            region: newRegion
+          };
+          $.ajax({
+            url: '/api/page/region',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(redoPayload)
+          }).done(() => {
+            const idx = currentRegions.findIndex(r => r.id === newRegion.id);
+            if (idx >= 0) currentRegions[idx] = newRegion;
+            viewer.setOverlays(currentRegions, currentLines);
+            setPendingChanges(true);
+          });
+        }
+      });
     }).fail(function (xhr) {
       alert(`Failed to update region: ${xhr.responseText || xhr.status}`);
     });
@@ -1016,10 +1159,41 @@ $(function () {
       data: JSON.stringify(payload)
     }).done(function (resp) {
       console.log('[main] Line created, backend response:', resp.line);
-      currentLines.push(resp.line);
+      const newLine = resp.line;
+      currentLines.push(newLine);
       console.log('[main] currentLines now has', currentLines.length, 'lines. IDs:', currentLines.map(l => l.id));
       viewer.setOverlays(currentRegions, currentLines);
       setPendingChanges(true);
+
+      // Add undo action for line creation
+      pushUndoAction({
+        type: 'LINE_CREATE',
+        lineId: newLine.id,
+        undo: () => {
+          console.debug('[undo] Undoing line create:', newLine.id);
+          deleteLine(newLine.id, true);
+        },
+        redo: () => {
+          console.debug('[undo] Redoing line create:', newLine.id);
+          const redoPayload = {
+            workspace_id: workspaceId,
+            path: currentPage,
+            line: newLine
+          };
+          $.ajax({
+            url: '/api/page/line',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(redoPayload)
+          }).done(() => {
+            if (!currentLines.find(l => l.id === newLine.id)) {
+              currentLines.push(newLine);
+              viewer.setOverlays(currentRegions, currentLines);
+              setPendingChanges(true);
+            }
+          });
+        }
+      });
     }).fail(function (xhr) {
       alert(`Failed to add line: ${xhr.responseText || xhr.status}`);
     });
@@ -1128,6 +1302,9 @@ $(function () {
   }
 
   function saveLineUpdate(ln) {
+    // Save old state for undo
+    const oldLine = deepClone(currentLines.find(l => l.id === ln.id));
+
     const payload = {
       workspace_id: workspaceId,
       path: currentPage,
@@ -1149,13 +1326,63 @@ $(function () {
       if (idx >= 0) currentLines[idx] = { ...currentLines[idx], ...resp.line };
       viewer.setOverlays(currentRegions, currentLines);
       setPendingChanges(true);
+
+      // Add undo action for line move
+      const newLine = deepClone(currentLines[idx]);
+      pushUndoAction({
+        type: 'LINE_MOVE',
+        lineId: ln.id,
+        undo: () => {
+          console.debug('[undo] Undoing line move:', ln.id);
+          const undoPayload = {
+            workspace_id: workspaceId,
+            path: currentPage,
+            line: oldLine
+          };
+          $.ajax({
+            url: '/api/page/line',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(undoPayload)
+          }).done(() => {
+            const idx = currentLines.findIndex(l => l.id === oldLine.id);
+            if (idx >= 0) currentLines[idx] = oldLine;
+            viewer.setOverlays(currentRegions, currentLines);
+            setPendingChanges(true);
+          });
+        },
+        redo: () => {
+          console.debug('[undo] Redoing line move:', ln.id);
+          const redoPayload = {
+            workspace_id: workspaceId,
+            path: currentPage,
+            line: newLine
+          };
+          $.ajax({
+            url: '/api/page/line',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(redoPayload)
+          }).done(() => {
+            const idx = currentLines.findIndex(l => l.id === newLine.id);
+            if (idx >= 0) currentLines[idx] = newLine;
+            viewer.setOverlays(currentRegions, currentLines);
+            setPendingChanges(true);
+          });
+        }
+      });
     }).fail(function (xhr) {
       alert(`Failed to update line: ${xhr.responseText || xhr.status}`);
     });
   }
 
-  function deleteRegion(id) {
+  function deleteRegion(id, skipUndo) {
     if (!id || !workspaceId || !currentPage) return;
+
+    // Save state for undo
+    const deletedRegion = deepClone(currentRegions.find(r => r.id === id));
+    const deletedLines = deepClone(currentLines.filter(l => l.region_id === id));
+
     $.ajax({
       url: '/api/page/region/delete',
       type: 'POST',
@@ -1167,13 +1394,110 @@ $(function () {
       viewer.setOverlays(currentRegions, currentLines);
       selectedRegionId = null;
       setPendingChanges(true);
+
+      // Add undo action for region deletion (unless this is called from undo)
+      if (!skipUndo && deletedRegion) {
+        const action = {
+          type: 'REGION_DELETE',
+          regionId: id,
+          restoredRegionId: null,  // Will be set when restored
+          wsId: workspaceId,  // Capture current values
+          page: currentPage,
+          undo: null,
+          redo: null
+        };
+
+        action.undo = () => {
+          console.debug('[undo] Undoing region delete:', id);
+          // Restore region (remove ID so API creates it as new)
+          const regionToRestore = { ...deletedRegion };
+          delete regionToRestore.id;
+
+          const payload = {
+            workspace_id: action.wsId,
+            path: action.page,
+            region: regionToRestore
+          };
+          $.ajax({
+            url: '/api/page/region',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload)
+          }).done((resp) => {
+            console.debug('[undo] Region restore response:', resp);
+            if (resp && resp.region) {
+              currentRegions.push(resp.region);
+              action.restoredRegionId = resp.region.id;  // Track new ID for redo
+              const newRegionId = resp.region.id;
+
+              // Restore lines sequentially to avoid race conditions
+              if (deletedLines.length === 0) {
+                viewer.setOverlays(currentRegions, currentLines);
+                setPendingChanges(true);
+                return;
+              }
+
+              let restoredCount = 0;
+              deletedLines.forEach(line => {
+                const lineToRestore = { ...line };
+                delete lineToRestore.id;
+                lineToRestore.region_id = newRegionId;  // Update to new region ID
+
+                const linePayload = {
+                  workspace_id: action.wsId,
+                  path: action.page,
+                  line: lineToRestore
+                };
+                $.ajax({
+                  url: '/api/page/line',
+                  type: 'POST',
+                  contentType: 'application/json',
+                  data: JSON.stringify(linePayload)
+                }).done((lineResp) => {
+                  if (lineResp && lineResp.line) {
+                    currentLines.push(lineResp.line);
+                  }
+                  restoredCount++;
+                  // Only update overlay once after all lines are restored
+                  if (restoredCount === deletedLines.length) {
+                    viewer.setOverlays(currentRegions, currentLines);
+                    setPendingChanges(true);
+                  }
+                }).fail((xhr) => {
+                  console.error('[undo] Failed to restore line:', xhr.responseText);
+                  restoredCount++;
+                  if (restoredCount === deletedLines.length) {
+                    viewer.setOverlays(currentRegions, currentLines);
+                    setPendingChanges(true);
+                  }
+                });
+              });
+            }
+          }).fail((xhr) => {
+            console.error('[undo] Failed to restore region:', xhr.responseText || xhr.status);
+            alert(`Failed to restore region: ${xhr.responseText || xhr.status}`);
+          });
+        };
+
+        action.redo = () => {
+          const idToDelete = action.restoredRegionId || id;
+          console.debug('[undo] Redoing region delete:', idToDelete);
+          deleteRegion(idToDelete, true);
+        };
+
+        pushUndoAction(action);
+      }
     }).fail(function (xhr) {
       alert(`Failed to delete region: ${xhr.responseText || xhr.status}`);
     });
   }
 
-  function deleteLine(id) {
+  function deleteLine(id, skipUndo) {
     if (!id || !workspaceId || !currentPage) return;
+
+    // Save state for undo
+    const deletedLine = deepClone(currentLines.find(l => l.id === id));
+
     $.ajax({
       url: '/api/page/line/delete',
       type: 'POST',
@@ -1184,6 +1508,56 @@ $(function () {
       viewer.setOverlays(currentRegions, currentLines);
       selectedLineId = null;
       setPendingChanges(true);
+
+      // Add undo action for line deletion (unless this is called from undo)
+      if (!skipUndo && deletedLine) {
+        const action = {
+          type: 'LINE_DELETE',
+          lineId: id,
+          restoredLineId: null,  // Will be set when restored
+          undo: null,  // Will be set below
+          redo: null   // Will be set below
+        };
+
+        action.undo = () => {
+          console.debug('[undo] Undoing line delete:', id);
+          // Remove ID so API creates it as new (deleted lines don't exist in XML)
+          const lineToRestore = { ...deletedLine };
+          delete lineToRestore.id;
+
+          const payload = {
+            workspace_id: workspaceId,
+            path: currentPage,
+            line: lineToRestore
+          };
+          $.ajax({
+            url: '/api/page/line',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload)
+          }).done((resp) => {
+            console.debug('[undo] Line restore response:', resp);
+            if (resp && resp.line) {
+              action.restoredLineId = resp.line.id;  // Track new ID for redo
+              currentLines.push(resp.line);
+              console.debug('[undo] Restored line with ID:', resp.line.id, 'currentLines now has', currentLines.length, 'lines');
+              viewer.setOverlays(currentRegions, currentLines);
+              setPendingChanges(true);
+            }
+          }).fail((xhr) => {
+            console.error('[undo] Failed to restore line:', xhr.responseText || xhr.status);
+            alert(`Failed to restore line: ${xhr.responseText || xhr.status}`);
+          });
+        };
+
+        action.redo = () => {
+          const idToDelete = action.restoredLineId || id;
+          console.debug('[undo] Redoing line delete:', idToDelete);
+          deleteLine(idToDelete, true);
+        };
+
+        pushUndoAction(action);
+      }
     }).fail(function (xhr) {
       alert(`Failed to delete line: ${xhr.responseText || xhr.status}`);
     });
