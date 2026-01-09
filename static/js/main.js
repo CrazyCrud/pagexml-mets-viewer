@@ -109,7 +109,7 @@ $(function () {
     const enabled = !!workspaceId;
     $('.section-tab').each(function () {
       const target = $(this).data('target');
-      const shouldDisable = !enabled && target !== 'workspace';
+      const shouldDisable = !enabled && target !== 'workspace' && target !== 'uploads';
       $(this).parent().toggleClass('is-disabled', shouldDisable);
       $(this).attr('aria-disabled', shouldDisable ? 'true' : 'false');
       $(this).attr('tabindex', shouldDisable ? '-1' : '0');
