@@ -24,3 +24,7 @@ And then run `python app.py`. The app runs then under http://127.0.0.1:5000.
 docker compose up --build
 ```
 The app runs under http://127.0.0.1:8000/.
+
+## Remark
+ChatGPT 4.5, 5 as well as Claude Opus 4.5 have been used to generate this viewer.
+Generated code has been manually tested and iteratively improved using the listed models.
